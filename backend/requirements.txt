@@ -4,3 +4,4 @@ numpy>=2,<3
 scikit-learn>=1.5,<2
 joblib>=1.4,<2
 email-validator>=2,<3
+pyshp>=2.3,<3

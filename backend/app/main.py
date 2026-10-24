@@ -5,8 +5,10 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, EmailStr, Field
+from .layers import router as layers_router
 
 app = FastAPI(title="GridAhead API", version="0.1.0")
+app.include_router(layers_router)
 DATABASE = Path(__file__).resolve().parents[1] / "storage" / "subscriptions.sqlite3"
 DEMO_PREMISES = {
     "DEMO-001": ("Roanoke, VA", "DEMO-CIRCUIT-01", "Elevated"),

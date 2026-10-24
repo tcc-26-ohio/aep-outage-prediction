@@ -33,7 +33,7 @@ http://127.0.0.1:8000. API docs: http://127.0.0.1:8000/docs.
 The frontend opens directly to an interactive OpenStreetMap centered on Roanoke.
 Search by US address or ZIP code; submitted searches are sent to the public
 Nominatim geocoding service. Map tiles and search require internet access. No
-live weather, outage overlays, risk predictions, or restoration estimates are
+live weather, live outage overlays, risk predictions, or restoration estimates are
 connected. For production, configure a geocoding/tile provider appropriate to
 your traffic and its usage policies.
 The automatic-alert dialog saves a location and email with explicit consent in
@@ -67,8 +67,21 @@ Only load trusted model artifacts: joblib files can execute code when loaded.
 - `scripts/download-data.sh`: download and extract the original archives.
 
 For deployment, serve the frontend and `/api` behind the same origin; the Vite
-proxy is development-only. Live weather, GIS ingestion, trained inference,
-maps, and scheduled notifications are future integrations.
+proxy is development-only. Live weather, trained inference,
+and scheduled notifications are future integrations.
+
+## GIS map overlays
+
+The backend reads the downloaded shapefiles directly and serves GeoJSON from
+`GET /api/layers/{name}`. Available layers: `damage`, `primary`, `hospitals`,
+`fire`, and `ems`. `GET /api/layers` lists availability. Optional `bbox` uses
+`west,south,east,north`; `limit` caps results at up to 10,000 features.
+The frontend refreshes selected layers as the map moves, displays truncation
+notices, and shows source attributes when features are clicked.
+Facility coordinates are converted from Web Mercator to WGS84. Historical
+damage is not a live outage feed; repair flags are not independently verified.
+Customer locations and medical flags are never exported by these endpoints.
+Layers are cached in process; restart the backend after replacing source files.
 
 ## Download datasets
 

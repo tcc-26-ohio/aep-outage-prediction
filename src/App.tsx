@@ -20,6 +20,55 @@ export function App() {
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [alertError, setAlertError] = useState("");
+  const [enabledLayers, setEnabledLayers] = useState<string[]>(["damage"]);
+  const [layerStatus, setLayerStatus] = useState("Loading historical damage…");
+  const [viewport, setViewport] = useState(0);
+
+  useEffect(() => {
+    const instance = map.current;
+    if (!instance) return;
+    const controller = new AbortController();
+    const group = L.layerGroup().addTo(instance);
+    const colors: Record<string, string> = { damage: "#c26b36", primary: "#567f8c", hospitals: "#a34f72", fire: "#bb4d47", ems: "#6c66a1" };
+    const bounds = instance.getBounds();
+    const bbox = [Math.max(-180, bounds.getWest()), Math.max(-90, bounds.getSouth()), Math.min(180, bounds.getEast()), Math.min(90, bounds.getNorth())].join(",");
+    setLayerStatus(enabledLayers.length ? "Loading map layers…" : "All data layers hidden");
+    async function load() {
+      try {
+        const results = await Promise.all(enabledLayers.map(async name => {
+          const response = await fetch(`/api/layers/${name}?bbox=${bbox}&limit=5000`, { signal: controller.signal });
+          if (!response.ok) throw new Error("Map data unavailable. Check the backend and downloaded datasets.");
+          const data = await response.json();
+          return { name, data };
+        }));
+        if (controller.signal.aborted) return;
+        let count = 0; let truncated = false;
+        for (const { name, data } of results) {
+          count += data.features.length; truncated ||= data.metadata.truncated;
+          L.geoJSON(data, {
+            style: { color: colors[name], weight: 2, opacity: 0.65 },
+            pointToLayer: (_feature, latlng) => L.circleMarker(latlng, { radius: name === "damage" ? 5 : 7, color: "#fff", weight: 1, fillColor: colors[name], fillOpacity: 0.85 }),
+            onEachFeature: (feature, layer) => {
+              const popup = document.createElement("div");
+              const title = document.createElement("strong");
+              title.textContent = name === "damage" ? "Historical damage report" : name === "primary" ? "Primary power line" : String(feature.properties?.name ?? "Emergency facility");
+              popup.append(title);
+              for (const [key, value] of Object.entries(feature.properties ?? {})) {
+                if (value === null || value === "") continue;
+                const row = document.createElement("div"); row.textContent = `${key.replaceAll("_", " ")}: ${value}`; popup.append(row);
+              }
+              layer.bindPopup(popup);
+            },
+          }).addTo(group);
+        }
+        setLayerStatus(enabledLayers.length ? `${count.toLocaleString()} features in view${truncated ? " · Zoom in to see all features" : ""}` : "All data layers hidden");
+      } catch (error) {
+        if (!controller.signal.aborted) setLayerStatus(error instanceof Error ? error.message : "Unable to load layers.");
+      }
+    }
+    void load();
+    return () => { controller.abort(); group.remove(); };
+  }, [enabledLayers, viewport]);
 
   async function enroll(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setAlertError("");
@@ -44,6 +93,8 @@ export function App() {
     }).on("tileerror", () => setMapError(true)).addTo(instance);
     L.control.zoom({ position: "bottomright" }).addTo(instance);
     map.current = instance;
+    instance.on("moveend", () => setViewport(value => value + 1));
+    setViewport(value => value + 1);
     return () => { instance.remove(); map.current = null; };
   }, []);
 
@@ -101,7 +152,11 @@ export function App() {
       <section className="map-panel" aria-label="Interactive neighborhood map">
         <div ref={container} className="map" />
         <div className="map-heading"><span className="live-dot" /><div><strong>Explore your area</strong><span>{selected ? "Your selected location" : "Starting in Roanoke, Virginia"}</span></div></div>
-        <div className="map-disclaimer">Base map only <span>·</span> No live outage or weather overlay</div>
+        <div className="layer-controls"><strong>Map layers</strong>{[
+          ["damage", "Historical damage", "#c26b36"], ["primary", "Primary power lines", "#567f8c"],
+          ["hospitals", "Hospitals", "#a34f72"], ["fire", "Fire stations", "#bb4d47"], ["ems", "Emergency medical services", "#6c66a1"],
+        ].map(([id, label, color]) => <label key={id}><input type="checkbox" checked={enabledLayers.includes(id!)} onChange={e => setEnabledLayers(current => e.target.checked ? [...current, id!] : current.filter(name => name !== id))} /><span style={{ background: color }} />{label}</label>)}<small role="status">{layerStatus}</small></div>
+        <div className="map-disclaimer">Historical GIS data <span>·</span> Not live outages or predicted weather impacts</div>
         {mapError && <p className="map-error" role="status">Some map tiles couldn’t load. Check your connection or refresh.</p>}
       </section>
     </main>
