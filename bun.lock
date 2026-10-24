@@ -5,11 +5,13 @@
     "": {
       "name": "aep-outage-prediction",
       "dependencies": {
+        "leaflet": "^1.9.4",
         "react": "^19.3.1",
         "react-dom": "^19.3.1",
       },
       "devDependencies": {
         "@types/bun": "latest",
+        "@types/leaflet": "^1.9.22",
         "@types/react": "^19.3.0",
         "@types/react-dom": "^19.3.0",
         "@vitejs/plugin-react": "^6.1.2",
@@ -57,6 +59,10 @@
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.1", "", {}, "sha512-2j9bGt5Jh8hj+vPtgzPtl72j0yRxHAyumoo6TNfAjsLB04UtpSvPbPcDcBMxz7n+9CYB0c1GxQFxYRg2jimqGw=="],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
+
+    "@types/geojson": ["@types/geojson@7946.0.16", "", {}, "sha512-6C8nqWur3j98U6+lXDfTUWIfgvZU+EumvpHKcYjujKH7woYyLj2sUmff0tRhrqM7BohUw7Pz3ZB1jj2gW9Fvmg=="],
+
+    "@types/leaflet": ["@types/leaflet@1.9.22", "", { "dependencies": { "@types/geojson": "*" } }, "sha512-h3lhECYEKDasG7LFHu+GiHqAvsgLuQvlJvVZzJDGONo3sEL+wUOqSFLnwkZlK0qVxnxbuGFW8iBlJNYs5wgndA=="],
 
     "@types/node": ["@types/node@26.6.5", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-uMzsv9stDdofIZBx4UGh4Z9ZgXnGC9seRDscilBcTHAeOFk67MZg/k9bWVfO+bk4qZmG+l52hRnLwUiH2LnJTg=="],
 
@@ -133,6 +139,8 @@
     "get-caller-file": ["get-caller-file@2.0.5", "", {}, "sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg=="],
 
     "get-east-asian-width": ["get-east-asian-width@1.7.0", "", {}, "sha512-XjH1AECxf0giL2V1aU8vKyRR2ppRUb5c0EvT7zuJTokQ74bNo52zOtghqdWIqrhUD79fo3x0WfKZdOqxF6LG1Q=="],
+
+    "leaflet": ["leaflet@1.9.4", "", {}, "sha512-nxS1ynzJOmOlHp+iL3FyWqK89GtNL8U8rvlMOsQdTTssxZwCXh8N2NB3GDQOL+YR3XnWyZAxwQixURb+FA74PA=="],
 
     "lightningcss": ["lightningcss@1.33.0", "", { "dependencies": { "detect-libc": "^2.0.3" }, "optionalDependencies": { "lightningcss-android-arm64": "1.33.0", "lightningcss-darwin-arm64": "1.33.0", "lightningcss-darwin-x64": "1.33.0", "lightningcss-freebsd-x64": "1.33.0", "lightningcss-linux-arm-gnueabihf": "1.33.0", "lightningcss-linux-arm64-gnu": "1.33.0", "lightningcss-linux-arm64-musl": "1.33.0", "lightningcss-linux-x64-gnu": "1.33.0", "lightningcss-linux-x64-musl": "1.33.0", "lightningcss-win32-arm64-msvc": "1.33.0", "lightningcss-win32-x64-msvc": "1.33.0" } }, "sha512-WkUDrojuJs0xkgGf2udWxa3yGBRxPtxUkB79i6aCZLRgc7PM8fZe9TosfPDcvEpQZbuFASnHYmRLBLUbmLOIIA=="],
 

@@ -30,11 +30,16 @@ activation is needed for this command. To run servers independently, use
 Open the Vite URL (usually http://localhost:5173). Vite proxies `/api` to
 http://127.0.0.1:8000. API docs: http://127.0.0.1:8000/docs.
 
-Try `DEMO-001`, `DEMO-002`, or `DEMO-003` to see different risk labels.
-All weather, risk labels, and circuit profiles are illustrative. The API does
-not read customer GIS records, ingest live weather, or run a validated model.
-Enrollment requires consent and stores email addresses locally in
-`backend/storage/subscriptions.sqlite3`; it does not send or verify emails.
+The frontend opens directly to an interactive OpenStreetMap centered on Roanoke.
+Search by US address or ZIP code; submitted searches are sent to the public
+Nominatim geocoding service. Map tiles and search require internet access. No
+live weather, outage overlays, risk predictions, or restoration estimates are
+connected. For production, configure a geocoding/tile provider appropriate to
+your traffic and its usage policies.
+The automatic-alert dialog saves a location and email with explicit consent in
+`backend/storage/subscriptions.sqlite3`; it does not send or verify emails or
+confirm utility eligibility. The original demo API routes remain for development
+but are no longer used by the frontend.
 Use test addresses only. Authentication, rate limiting, contact verification,
 unsubscribe, and notification delivery are required before public deployment.
 

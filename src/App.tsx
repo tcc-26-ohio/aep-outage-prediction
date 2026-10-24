@@ -1,56 +1,123 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { getAssessment, subscribe } from "./api";
-import type { Assessment } from "./api";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+type Place = { lat: number; lon: number; name: string; bounds: L.LatLngBoundsExpression };
 
 export function App() {
-  const [premise, setPremise] = useState("DEMO-001");
-  const [assessment, setAssessment] = useState<Assessment | null>(null);
-  const [email, setEmail] = useState("");
-  const [consent, setConsent] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const container = useRef<HTMLDivElement>(null);
+  const map = useRef<L.Map | null>(null);
+  const marker = useRef<L.CircleMarker | null>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<Place[]>([]);
+  const [selected, setSelected] = useState<Place | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [mapError, setMapError] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [alertError, setAlertError] = useState("");
 
-  async function assess(event: FormEvent) {
-    event.preventDefault(); setLoading(true); setError(""); setNotice(""); setAssessment(null);
-    try { setAssessment(await getAssessment(premise.trim())); }
-    catch (error) { setError(error instanceof Error ? error.message : "Unable to load assessment."); }
-    finally { setLoading(false); }
+  async function enroll(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setSaving(true); setAlertError("");
+    const values = new FormData(event.currentTarget);
+    try {
+      const response = await fetch("/api/location-subscriptions", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location: values.get("location"), email: values.get("email"), consent: values.get("consent") === "on" }),
+      });
+      if (!response.ok) throw new Error("We couldn’t save your preference. Please try again later.");
+      setSaved(true);
+    } catch (error) { setAlertError(error instanceof Error ? error.message : "Unable to save."); }
+    finally { setSaving(false); }
   }
 
-  async function enroll(event: FormEvent) {
+  useEffect(() => {
+    if (!container.current) return;
+    const instance = L.map(container.current, { zoomControl: false }).setView([37.27, -79.94], 11);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19,
+    }).on("tileerror", () => setMapError(true)).addTo(instance);
+    L.control.zoom({ position: "bottomright" }).addTo(instance);
+    map.current = instance;
+    return () => { instance.remove(); map.current = null; };
+  }, []);
+
+  function select(place: Place) {
+    setSelected(place); setResults([]); setQuery(place.name);
+    map.current?.fitBounds(place.bounds, { maxZoom: 15, padding: [35, 35] });
+    marker.current?.remove();
+    if (map.current) marker.current = L.circleMarker([place.lat, place.lon], {
+      radius: 10, color: "#ffffff", weight: 3, fillColor: "#23765e", fillOpacity: 1,
+    }).addTo(map.current).bindTooltip("Selected location");
+  }
+
+  async function findLocation(event: FormEvent) {
     event.preventDefault();
-    if (!assessment) return;
-    setSubmitting(true); setError(""); setNotice("");
-    try { setNotice((await subscribe(assessment.premise, email, consent)).message); }
-    catch (error) { setError(error instanceof Error ? error.message : "Unable to enroll."); }
-    finally { setSubmitting(false); }
+    const value = query.trim();
+    if (!value) return;
+    setBusy(true); setError(""); setResults([]);
+    try {
+      const params = new URLSearchParams({ q: value, format: "json", countrycodes: "us", limit: "5" });
+      const response = await fetch(`https://nominatim.openstreetmap.org/search?${params}`, { signal: AbortSignal.timeout(15000) });
+      if (!response.ok) throw new Error("Location search is temporarily unavailable. Please try again shortly.");
+      const data: { lat: string; lon: string; display_name: string; boundingbox: [string, string, string, string] }[] = await response.json();
+      const places = data.map(item => ({ lat: Number(item.lat), lon: Number(item.lon), name: item.display_name,
+        bounds: [[Number(item.boundingbox[0]), Number(item.boundingbox[2])], [Number(item.boundingbox[1]), Number(item.boundingbox[3])]] as L.LatLngBoundsExpression }));
+      if (!places.length) setError("We couldn’t find that location. Try a 5-digit ZIP code or include your city and state.");
+      else if (places.length === 1) select(places[0]!);
+      else setResults(places);
+    } catch (error) { setError(error instanceof Error && error.name !== "TimeoutError" ? error.message : "Search timed out. Please try again."); }
+    finally { setBusy(false); }
   }
 
-  return <>
-    <header className="nav"><a className="brand" href="/">ϟ <span>GridAhead</span></a><span className="nav-label">WEATHER READINESS / ROANOKE, VA</span><span className="pill">Prototype</span></header>
-    <main>
-      <section className="hero">
-        <div><p className="eyebrow">A LITTLE NOTICE. A LOT MORE PREPARED.</p><h1>Stay ahead<br />of the storm.</h1><p className="intro">Understand your power risk, plan for what’s next, and get ready before severe weather arrives.</p></div>
-        <aside className="weather"><span className="weather-icon" aria-hidden="true">☁</span><p className="eyebrow">DEMO WEATHER SCENARIO</p><h2>Strong winds ahead</h2><p>Illustrative gusts of 45–60 mph.<br />Not a current weather forecast.</p><div className="weather-footer">ROANOKE REGION <span>↗</span></div></aside>
+  return <div className="app-shell">
+    <header className="toolbar">
+      <a className="brand" href="/" aria-label="GridAhead home"><span className="brand-mark">ϟ</span>GridAhead</a>
+      <nav aria-label="Main navigation"><span className="active-nav">Power outlook</span><button className="text-button" onClick={() => search.current?.focus()}>Find my area</button></nav>
+      <button className="alert-button" onClick={() => dialog.current?.showModal()}><span aria-hidden="true">♧</span> Get automatic alerts</button>
+    </header>
+
+    <main className="workspace">
+      <aside className="sidebar">
+        <div className="intro"><p className="eyebrow">BEFORE THE WEATHER TURNS</p><h1>Your neighborhood.<br />Your power outlook.</h1><p>A little heads-up makes a big difference. Start with your address or ZIP code.</p></div>
+        <form className="search-form" onSubmit={findLocation}>
+          <label htmlFor="location">Where would you like to check?</label>
+          <div className="search-input"><span aria-hidden="true">⌕</span><input ref={search} id="location" value={query} onChange={e => setQuery(e.target.value)} placeholder="Enter an address or ZIP code" required maxLength={250} autoComplete="street-address" /></div>
+          <button className="primary-button" disabled={busy}>{busy ? "Finding your area…" : "Find my area"}<span aria-hidden="true">→</span></button>
+          <small>US locations · Search powered by OpenStreetMap</small>
+        </form>
+        {error && <p className="error" role="alert">{error}</p>}
+        {results.length > 0 && <section className="results" aria-label="Location search results"><p>Choose your location</p>{results.map((place, index) => <button key={index} onClick={() => select(place)}>{place.name}<span>↗</span></button>)}</section>}
+        {selected ? <section className="location-card" aria-live="polite"><p className="eyebrow">YOUR SELECTED AREA</p><h2>{selected.name}</h2><span className="status-tag">Location found</span><p>Live weather risk and restoration estimates aren’t available yet. Finding a location does not confirm utility service or alert eligibility.</p><button className="text-link" onClick={() => dialog.current?.showModal()}>Explore automatic alerts →</button></section> : <section className="how-it-works"><span className="compass" aria-hidden="true">⌖</span><h2>A clearer picture starts here.</h2><p>Find your neighborhood on the map. When live forecasts are connected, this is where you’ll see what weather could mean for your power.</p></section>}
+        <section className="prepare"><span aria-hidden="true">☀</span><div><h2>A small step for peace of mind</h2><p>Keep a flashlight handy and charge your phone before severe weather arrives.</p></div></section>
+        <p className="privacy-note">Your search is sent to OpenStreetMap’s location service. We don’t save your address in this app.</p>
+      </aside>
+
+      <section className="map-panel" aria-label="Interactive neighborhood map">
+        <div ref={container} className="map" />
+        <div className="map-heading"><span className="live-dot" /><div><strong>Explore your area</strong><span>{selected ? "Your selected location" : "Starting in Roanoke, Virginia"}</span></div></div>
+        <div className="map-disclaimer">Base map only <span>·</span> No live outage or weather overlay</div>
+        {mapError && <p className="map-error" role="status">Some map tiles couldn’t load. Check your connection or refresh.</p>}
       </section>
-
-      <section className="lookup"><div><p className="eyebrow">YOUR POWER OUTLOOK</p><h2>Let’s check your connection.</h2><p>Use DEMO-001, DEMO-002, or DEMO-003. No real customer information needed.</p></div><form onSubmit={assess}><label htmlFor="premise">Demo premise ID</label><div className="input-row"><input id="premise" value={premise} onChange={e => setPremise(e.target.value)} required /><button disabled={loading}>{loading ? "Checking…" : "Check outlook →"}</button></div></form></section>
-
-      {error && <p className="message error" role="alert">{error} Make sure the backend is running.</p>}
-      {assessment ? <>
-        <div className="section-heading"><div><p className="eyebrow">{assessment.location} · {assessment.circuit}</p><h2>Your readiness snapshot</h2></div><span className="pill">Demo assessment · not a live prediction</span></div>
-        <div className="cards">
-          <section className="card risk"><p className="eyebrow">01 / WILL I LOSE POWER?</p><span className="risk-badge">{assessment.risk} risk</span><h3>Be ready, not worried.</h3><p>Scenario window: {assessment.window}. An outage is possible, not certain.</p><ul>{assessment.drivers.map(driver => <li key={driver}>{driver}</li>)}</ul></section>
-          <section className="card"><p className="eyebrow">02 / HOW LONG COULD IT TAKE?</p><h3>Plan for a range.</h3><p>{assessment.restoration}</p><small>Conditional planning guidance, not a restoration commitment.</small></section>
-          <section className="card"><p className="eyebrow">03 / WHAT SHOULD I DO?</p><h3>A few things, today.</h3><ul className="checklist">{assessment.preparation.map(item => <li key={item}>{item}</li>)}</ul></section>
-        </div>
-        <section className="enrollment"><div><p className="eyebrow">04 / DO I QUALIFY FOR ALERTS?</p><h2>{assessment.eligible ? "You’re in the demo service area." : "This premise is not eligible."}</h2><p>Try alert enrollment. This prototype records your request locally; it does not verify email addresses or send messages.</p></div><form onSubmit={enroll}><label htmlFor="email">Email address</label><input id="email" type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="you@example.com" /><label className="consent"><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} required />I consent to storing this email for demo alert enrollment.</label><button disabled={!assessment.eligible || submitting}>{submitting ? "Saving…" : "Save demo enrollment →"}</button></form></section>
-        {notice && <p className="message" role="status">{notice}</p>}
-      </> : <div className="empty"><span aria-hidden="true">↗</span><h2>A clearer outlook starts here.</h2><p>Check a demo premise to explore risk, restoration planning, and preparation.</p></div>}
-      <footer>Built for preparedness, not certainty.<span>Demo data only · No live weather or notifications</span></footer>
     </main>
-  </>;
+
+    <dialog ref={dialog} className="alert-dialog" onClick={e => { if (e.target === e.currentTarget) dialog.current?.close(); }}>
+      <button className="close-button" aria-label="Close automatic alerts" onClick={() => dialog.current?.close()}>×</button>
+      <p className="eyebrow">A HEADS-UP, WITHOUT THE GUESSWORK</p><h2>Stay ahead of what’s coming.</h2>
+      <p>Automatic alerts will let you know when severe weather could affect power in your area.</p>
+      <div className="coming-soon">Delivery coming soon</div><p>Save your opt-in preference below. This prototype stores your details locally on the server; it does not send alerts, verify your email, or confirm service eligibility yet. Use a test email while trying it out.</p>
+      {saved ? <p role="status">Your preference is saved. Alerts are not active yet.</p> : <form className="alert-form" onSubmit={enroll}>
+        <label htmlFor="alert-location">Address or ZIP code</label><input id="alert-location" name="location" defaultValue={selected?.name ?? query} required maxLength={500} placeholder="Address or ZIP code" />
+        <label htmlFor="alert-email">Email address</label><input id="alert-email" name="email" type="email" required placeholder="you@example.com" />
+        <label className="consent"><input name="consent" type="checkbox" required />I opt in to weather-related power alerts and consent to storing this location and email.</label>
+        {alertError && <p className="error" role="alert">{alertError}</p>}
+        <button className="primary-button" disabled={saving}>{saving ? "Saving…" : "Save alert preference"}<span>→</span></button>
+      </form>}
+    </dialog>
+  </div>;
 }

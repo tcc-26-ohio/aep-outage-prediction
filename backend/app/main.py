@@ -34,6 +34,33 @@ class Subscription(BaseModel):
     consent: bool
 
 
+class LocationSubscription(BaseModel):
+    location: str = Field(min_length=3, max_length=500)
+    email: EmailStr
+    consent: bool
+
+
+@app.post("/api/location-subscriptions", status_code=201)
+def subscribe_location(subscription: LocationSubscription):
+    if not subscription.consent:
+        raise HTTPException(400, "Explicit consent is required.")
+    location = subscription.location.strip()
+    if len(location) < 3:
+        raise HTTPException(400, "Please enter an address or ZIP code.")
+    DATABASE.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(DATABASE) as connection:
+        connection.execute("""CREATE TABLE IF NOT EXISTS location_subscriptions (
+            location TEXT NOT NULL, email TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(location, email)
+        )""")
+        connection.execute(
+            "INSERT OR IGNORE INTO location_subscriptions (location, email) VALUES (?, ?)",
+            (location, str(subscription.email)),
+        )
+    return {"message": "Preference saved. Alert delivery is not active."}
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok", "mode": "demo", "model_loaded": False}

@@ -31,6 +31,14 @@ class ApiTests(unittest.TestCase):
             payload["email"] = "invalid"
             self.assertEqual(self.client.post("/api/subscriptions", json=payload).status_code, 422)
 
+    def test_location_subscription(self):
+        payload = {"location": "24016", "email": "test@example.com", "consent": True}
+        with TemporaryDirectory() as directory, patch("app.main.DATABASE", Path(directory) / "test.sqlite3"):
+            self.assertEqual(self.client.post("/api/location-subscriptions", json=payload).status_code, 201)
+            self.assertEqual(self.client.post("/api/location-subscriptions", json=payload).status_code, 201)
+            payload["consent"] = False
+            self.assertEqual(self.client.post("/api/location-subscriptions", json=payload).status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()
