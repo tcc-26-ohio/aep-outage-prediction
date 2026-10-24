@@ -17,12 +17,12 @@ function Chat({ audience }: { audience: Audience }) {
   const busy = status === 'submitted' || status === 'streaming';
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, status]);
   const prompts = worker ? [
-    { icon: HardHat, title: 'Prepare for a response', description: 'Review a field readiness checklist', text: 'Help me prepare a general outage response checklist.' },
+    { icon: HardHat, title: 'View nearby outages', description: 'Find community outage reports', text: 'Show me nearby outage reports. Ask me for my location.' },
     { icon: ShieldCheck, title: 'Put safety first', description: 'Talk through safe response practices', text: 'What general safety precautions should utility workers keep in mind during an outage?' },
-    { icon: MessageSquare, title: 'Keep customers informed', description: 'Draft a clear outage update', text: 'Help me draft an outage update for customers without making unverified claims.' },
+    { icon: MessageSquare, title: 'Resolve an outage', description: 'Mark a report as restored', text: 'I want to mark an outage resolved. Help me find the report first.' },
   ] : [
-    { icon: Zap, title: 'Could I be affected?', description: 'Learn about outage preparedness', text: 'How can I prepare in case my home is affected by an outage?' },
-    { icon: TriangleAlert, title: 'Experiencing an outage?', description: 'Find out what to do next', text: 'My power is out. What should I do, and how can I report it to my utility?' },
+    { icon: Zap, title: 'Outages nearby?', description: 'Find community outage reports', text: 'Are there reported outages near me? Ask me for my location.' },
+    { icon: TriangleAlert, title: 'Experiencing an outage?', description: 'Submit a community report', text: 'My power is out and I want to submit an outage report. Ask me for my location and details.' },
     { icon: ShieldCheck, title: 'Stay safe & prepared', description: 'Get tips for you and your home', text: 'What are the most important safety tips during a power outage?' },
   ];
   function submit(text: string) {
@@ -39,7 +39,7 @@ function Chat({ audience }: { audience: Audience }) {
       <div className="sidebar-bottom"><div className="sidebar-tip"><div className="tip-icon"><Zap size={18} /></div><strong>A little preparation.<br />A lot of peace of mind.</strong><p>Helpful guidance, before and during an outage.</p></div><button className="help-button" onClick={() => setHelp(!help)}><CircleHelp size={17} /> Help & information <ChevronRight size={15} /></button></div>
     </aside>
     <main>
-      <div className="section-heading"><span>{worker ? 'Worker assistant' : 'Outage assistant'}</span><span className="preview-badge">CHAT PREVIEW</span></div>
+      <div className="section-heading"><span>{worker ? 'Worker assistant' : 'Outage assistant'}</span><span className="preview-badge">COMMUNITY REPORTS</span></div>
       <div className={`chat-scroll ${messages.length ? 'has-messages' : ''}`}>
         {messages.length === 0 ? <section className="welcome">
           <div className="welcome-icon"><Zap size={30} fill="currentColor" strokeWidth={1.5} /><span><Sparkles size={13} /></span></div>
@@ -53,11 +53,11 @@ function Chat({ audience }: { audience: Audience }) {
       <div className="composer-area">
         {error && <div className="error" role="alert">Chat couldn’t connect. Check your connection and the server’s Groq API key, then try again.<button onClick={() => { const last = [...messages].reverse().find(m => m.role === 'user'); const text = last?.parts.filter(p => p.type === 'text').map(p => p.text).join('\n'); if (text) submit(text); }}>Retry</button><button aria-label="Dismiss error" onClick={clearError}><X size={16} /></button></div>}
         <form className="composer" onSubmit={e => { e.preventDefault(); submit(input); }}><textarea aria-label="Message" placeholder={worker ? 'Ask about response, safety, or customer communication…' : 'Ask a question about outages, safety, or what to do next…'} value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(input); } }} rows={2} /><div className="composer-tools"><span><Sparkles size={14} /> {worker ? 'Worker' : 'Personal'} assistant</span>{busy ? <button type="button" className="send" aria-label="Stop response" onClick={() => void stop()}><Square size={16} /></button> : <button className="send" type="submit" disabled={!input.trim()} aria-label="Send message"><ArrowUp size={19} /></button>}</div></form>
-        <p className="disclaimer">AI guidance only. Live outage checks and report submission aren’t available yet.</p>
+        <p className="disclaimer">Community reports, not verified utility data. Place lookups use OpenStreetMap. Worker mode is not authenticated.</p>
       </div>
       <footer><span><span className="footer-dot" /> Built for a more resilient community</span><span>Powered by Groq <Zap size={12} /></span></footer>
     </main>
-    {help && <div className="modal-backdrop" onClick={() => setHelp(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-label="Help and information" onClick={e => e.stopPropagation()}><button className="close-modal" autoFocus aria-label="Close help" onClick={() => setHelp(false)}><X size={20} /></button><ShieldCheck size={28} /><h2>A guide, not a live outage service.</h2><p>GridGuide provides AI-generated general guidance. It cannot check your address, predict outages, submit reports, or dispatch crews.</p><p>Report outages directly to your utility. Stay away from downed power lines and contact emergency services if there is immediate danger.</p><button className="new-chat" onClick={() => setHelp(false)}><Check size={16} /> Got it</button></section></div>}
+    {help && <div className="modal-backdrop" onClick={() => setHelp(false)}><section className="help-modal" role="dialog" aria-modal="true" aria-label="Help and information" onClick={e => e.stopPropagation()}><button className="close-modal" autoFocus aria-label="Close help" onClick={() => setHelp(false)}><X size={20} /></button><ShieldCheck size={28} /><h2>Community outage reporting.</h2><p>Ask to report an outage or find nearby reports. Provide an address or place name, which is sent to OpenStreetMap to find coordinates. Reports and coordinates are stored on this server and shared through nearby searches. Workers can mark reports resolved. Worker mode is a demo, not an authenticated role.</p><p>Reports are not verified utility status. Also report outages directly to your utility. Stay away from downed power lines and contact emergency services if there is immediate danger.</p><button className="new-chat" onClick={() => setHelp(false)}><Check size={16} /> Got it</button></section></div>}
   </>;
 }
 
