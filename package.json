@@ -10,7 +10,8 @@
     "build": "vite build",
     "start": "NODE_ENV=production bun index.ts",
     "typecheck": "tsc --noEmit",
-    "data:pull": "bash scripts/download-data.sh"
+    "data:pull": "bash scripts/download-data.sh",
+    "gis:build": ".venv/bin/python scripts/build-gis.py && .venv/bin/python scripts/build-isolation.py"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -28,6 +29,7 @@
     "ai": "^7.0.153",
     "hono": "^4.13.13",
     "lucide-react": "^1.61.0",
+    "maplibre-gl": "^6.15.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-markdown": "^10.1.0",

@@ -3,6 +3,7 @@ import { serveStatic } from 'hono/bun';
 import { createGroq } from '@ai-sdk/groq';
 import { convertToModelMessages, streamText, stepCountIs, type UIMessage } from 'ai';
 import { outageTools } from './server/tools';
+import { getPremise, premiseStatus, searchPremises } from './server/premises';
 
 const app = new Hono();
 
@@ -30,6 +31,35 @@ Before submitting a report, confirm the specific location and outage details wit
   } catch (error) {
     console.error('Chat request failed:', error);
     return c.json({ error: 'Unable to start chat. Please try again.' }, 500);
+  }
+});
+
+app.get('/api/premises/search', async (c) => {
+  try {
+    return c.json({ matches: await searchPremises(c.req.query('q') ?? '') });
+  } catch (error) {
+    console.error('Premise search failed:', error);
+    return c.json({ error: 'Address lookup is unavailable.' }, 503);
+  }
+});
+
+app.get('/api/premises/:pid', async (c) => {
+  try {
+    const premise = await getPremise(c.req.param('pid'));
+    return premise ? c.json(premise) : c.json({ error: 'Not found' }, 404);
+  } catch (error) {
+    console.error('Premise lookup failed:', error);
+    return c.json({ error: 'Address lookup is unavailable.' }, 503);
+  }
+});
+
+app.get('/api/premises/:pid/status', async (c) => {
+  try {
+    const status = await premiseStatus(c.req.param('pid'), c.req.query('includeRepaired') === '1');
+    return status ? c.json(status) : c.json({ error: 'Not found' }, 404);
+  } catch (error) {
+    console.error('Premise status failed:', error);
+    return c.json({ error: 'Status is unavailable.' }, 503);
   }
 });
 
