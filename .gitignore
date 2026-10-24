@@ -1,5 +1,10 @@
 # dependencies (bun install)
 node_modules
+.venv/
+__pycache__/
+*.pyc
+backend/storage/
+backend/models/
 data
 
 # output
