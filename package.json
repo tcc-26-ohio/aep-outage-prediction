@@ -9,7 +9,8 @@
     "dev:api": ".venv/bin/python -m uvicorn app.main:app --app-dir backend --reload",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "data:pull": "bash scripts/download-data.sh"
+    "data:pull": "bash scripts/download-data.sh",
+    "weather:pull": ".venv/bin/python scripts/download_weather.py"
   },
   "devDependencies": {
     "@types/bun": "latest",

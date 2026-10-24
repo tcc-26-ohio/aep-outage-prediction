@@ -83,6 +83,36 @@ damage is not a live outage feed; repair flags are not independently verified.
 Customer locations and medical flags are never exported by these endpoints.
 Layers are cached in process; restart the backend after replacing source files.
 
+## Historical weather
+
+Install backend dependencies, then run:
+
+```bash
+bun run weather:pull --list-cities
+bun run weather:pull
+# Smaller download:
+bun run weather:pull --city ROANOKE --city VINTON --start 2025-02-01 --end 2025-02-28
+```
+
+`scripts/download_weather.py` derives Virginia city centroids from customer
+geometry and downloads hourly temperature, precipitation, rain, snowfall,
+wind speed, and gusts from Open-Meteo's Historical Weather API. By default,
+dates span seven days before the first damage report through the last report,
+capped at six days before today for archive availability. Future-dated reports
+cannot have historical weather yet. Requests are sequential, retried, and cached
+in `data/weather/raw/`; rerun the same command after an interrupted download.
+Each city gets an hourly CSV, with units, attribution, grid coordinates, and
+completion status recorded in `data/weather/manifest.json`. Missing weather
+values remain blank, never replaced with zero. Output is Git-ignored.
+
+These are **historical gridded estimates, not archived forecasts**. City-level
+samples are a starting point, not exact conditions at each asset. Timestamps
+are UTC: convert to local time before joining to local damage-report dates.
+Use archived forecasts for advance-warning validation. Ice accumulation is not
+measured by this download. The script does not train or wire weather into the API.
+The public API is subject to Open-Meteo usage limits and noncommercial terms;
+review provider terms and attribution requirements before production use.
+
 ## Download datasets
 
 Requires `curl` and `unzip`. Run:
