@@ -6,11 +6,34 @@ To install dependencies:
 bun install
 ```
 
-To run:
+## Chat app
+
+Vite/React frontend with a Hono backend, using the Vercel AI SDK and Groq.
+Users and Workers have separate conversations (kept in memory while the page is open).
+Outage prediction, live status checks, and report submission are not implemented.
+
+Copy `.env.example` to `.env` and set `GROQ_API_KEY` to your Groq API key.
+Optionally set `GROQ_MODEL` (defaults to `llama-3.3-70b-versatile`).
+
+To run both development servers:
 
 ```bash
-bun run index.ts
+bun run dev
 ```
+
+Open the Vite URL shown in the terminal (normally http://localhost:5173).
+Vite proxies `/api` to the Hono server on port 3001. If you change `PORT`,
+update the proxy target in `vite.config.ts` too.
+
+```bash
+bun run typecheck
+bun run build
+bun run start
+```
+
+Production serves the built frontend and API together at http://localhost:3001.
+The API key is only read by the backend; never prefix it with `VITE_`.
+The interface tabs are presentation only, not authentication or role-based access control.
 
 ## Download datasets
 
