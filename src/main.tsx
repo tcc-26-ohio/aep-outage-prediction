@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { useChat } from '@ai-sdk/react';
 import { DefaultChatTransport } from 'ai';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { ArrowRight, ArrowUp, Check, ChevronRight, CircleHelp, HardHat, House, MessageSquare, Plus, ShieldCheck, Sparkles, Square, TriangleAlert, X, Zap } from 'lucide-react';
 import './styles.css';
 
@@ -48,7 +50,7 @@ function Chat({ audience }: { audience: Audience }) {
           <p className="welcome-description">{worker ? 'Your partner for outage response guidance, safety practices, and clear communication.' : 'Questions about power outages? Get guidance, know your next steps, and feel a little more prepared.'}</p>
           <div className="prompt-grid">{prompts.map(({ icon: Icon, title, description, text }) => <button className="prompt-card" key={title} onClick={() => submit(text)}><Icon size={21} /><strong>{title}</strong><span>{description}</span><ArrowRight className="card-arrow" size={17} /></button>)}</div>
           <div className="welcome-note"><ShieldCheck size={15} /> Guidance you can use. Your safety comes first.</div>
-        </section> : <section className="messages" aria-label="Conversation" aria-live="polite">{messages.map(message => <article key={message.id} className={`message ${message.role}`}><div className="message-avatar">{message.role === 'user' ? (worker ? <HardHat size={17} /> : <House size={17} />) : <Zap size={17} />}</div><div><div className="message-author">{message.role === 'user' ? 'You' : 'GridGuide'}</div>{message.parts.map((part, i) => part.type === 'text' ? <div className="message-text" key={i}>{part.text}</div> : null)}</div></article>)}{status === 'submitted' && <div className="thinking"><Sparkles size={16} /> Thinking…</div>}<div ref={bottom} /></section>}
+        </section> : <section className="messages" aria-label="Conversation" aria-live="polite">{messages.map(message => <article key={message.id} className={`message ${message.role}`}><div className="message-avatar">{message.role === 'user' ? (worker ? <HardHat size={17} /> : <House size={17} />) : <Zap size={17} />}</div><div><div className="message-author">{message.role === 'user' ? 'You' : 'GridGuide'}</div>{message.parts.map((part, i) => part.type === 'text' ? <div className={`message-text${message.role === 'assistant' ? ' markdown' : ''}`} key={i}>{message.role === 'assistant' ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown> : part.text}</div> : null)}</div></article>)}{status === 'submitted' && <div className="thinking"><Sparkles size={16} /> Thinking…</div>}<div ref={bottom} /></section>}
       </div>
       <div className="composer-area">
         {error && <div className="error" role="alert">Chat couldn’t connect. Check your connection and the server’s Groq API key, then try again.<button onClick={() => { const last = [...messages].reverse().find(m => m.role === 'user'); const text = last?.parts.filter(p => p.type === 'text').map(p => p.text).join('\n'); if (text) submit(text); }}>Retry</button><button aria-label="Dismiss error" onClick={clearError}><X size={16} /></button></div>}
