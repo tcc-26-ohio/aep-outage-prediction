@@ -1,14 +1,29 @@
 """Demo API. No live forecasts, real customer records, or notification delivery."""
 
 import sqlite3
+import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 from .layers import router as layers_router
+from .outlook import build as build_outlook, router as outlook_router
+from .weather import load as load_weather, router as weather_router
+from .weathermap import router as weathermap_router
 
-app = FastAPI(title="GridAhead API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_app):
+    # Reading the shapefiles and weather CSVs takes seconds; do it once in the background at startup.
+    threading.Thread(target=lambda: (build_outlook(), load_weather()), daemon=True).start()
+    yield
+
+
+app = FastAPI(title="GridAhead API", version="0.1.0", lifespan=lifespan)
 app.include_router(layers_router)
+app.include_router(outlook_router)
+app.include_router(weather_router)
+app.include_router(weathermap_router)
 DATABASE = Path(__file__).resolve().parents[1] / "storage" / "subscriptions.sqlite3"
 DEMO_PREMISES = {
     "DEMO-001": ("Roanoke, VA", "DEMO-CIRCUIT-01", "Elevated"),
