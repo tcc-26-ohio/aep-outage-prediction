@@ -11,8 +11,13 @@ export type Assessment = {
   demo: boolean;
 };
 
+export function apiUrl(path: string): string {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/+$/, "") ?? "";
+  return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, init);
+  const response = await fetch(apiUrl(`/api${path}`), init);
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(typeof body?.detail === "string" ? body.detail : `Request failed (${response.status}).`);

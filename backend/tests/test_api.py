@@ -15,6 +15,20 @@ class ApiTests(unittest.TestCase):
     def test_health(self):
         self.assertEqual(self.client.get("/api/health").json()["mode"], "demo")
 
+    def test_frontend_origin_is_allowed(self):
+        response = self.client.options(
+            "/api/layers",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers["access-control-allow-origin"],
+            "http://localhost:5173",
+        )
+
     def test_assessment(self):
         result = self.client.get("/api/assessments/DEMO-001")
         self.assertEqual(result.status_code, 200)

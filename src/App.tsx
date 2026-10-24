@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { apiUrl } from "./api";
 
 type Place = { lat: number; lon: number; name: string; bounds: L.LatLngBoundsExpression };
 
@@ -36,7 +37,7 @@ export function App() {
     async function load() {
       try {
         const results = await Promise.all(enabledLayers.map(async name => {
-          const response = await fetch(`/api/layers/${name}?bbox=${bbox}&limit=5000`, { signal: controller.signal });
+          const response = await fetch(apiUrl(`/api/layers/${name}?bbox=${bbox}&limit=5000`), { signal: controller.signal });
           if (!response.ok) throw new Error("Map data unavailable. Check the backend and downloaded datasets.");
           const data = await response.json();
           return { name, data };
@@ -74,7 +75,7 @@ export function App() {
     event.preventDefault(); setSaving(true); setAlertError("");
     const values = new FormData(event.currentTarget);
     try {
-      const response = await fetch("/api/location-subscriptions", {
+      const response = await fetch(apiUrl("/api/location-subscriptions"), {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ location: values.get("location"), email: values.get("email"), consent: values.get("consent") === "on" }),
       });

@@ -70,6 +70,11 @@ For deployment, serve the frontend and `/api` behind the same origin; the Vite
 proxy is development-only. Live weather, trained inference,
 and scheduled notifications are future integrations.
 
+For separate frontend and API hosts, set the frontend build variable
+`VITE_API_BASE_URL` to the API origin and set the API variable `FRONTEND_ORIGIN`
+to the frontend origin. For Render, these are the backend and frontend
+`onrender.com` URLs, respectively, without trailing slashes.
+
 ## GIS map overlays
 
 The backend reads the downloaded shapefiles directly and serves GeoJSON from

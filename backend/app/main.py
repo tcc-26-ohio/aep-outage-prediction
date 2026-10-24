@@ -1,13 +1,22 @@
 """Demo API. No live forecasts, real customer records, or notification delivery."""
 
+import os
 import sqlite3
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from .layers import router as layers_router
 
 app = FastAPI(title="GridAhead API", version="0.1.0")
+frontend_origin = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173").rstrip("/")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[frontend_origin],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(layers_router)
 DATABASE = Path(__file__).resolve().parents[1] / "storage" / "subscriptions.sqlite3"
 DEMO_PREMISES = {
