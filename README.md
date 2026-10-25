@@ -18,7 +18,7 @@ Copy `.env.example` to `.env` and set `GROQ_API_KEY` (the chat app and the clien
 ```bash
 bun run dev          # Vite (http://localhost:5173) + API server (port 3001)
 bun run typecheck
-bun run build        # builds all three pages
+bun run build        # builds both pages
 bun run start        # production: built frontend + API on http://localhost:3001
 bun test             # database tests
 ```
