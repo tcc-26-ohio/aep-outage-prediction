@@ -343,22 +343,29 @@ function Conversation({ premise, includeRepaired, subscribed, openUpdates, sendR
   const end = React.useRef<HTMLDivElement>(null);
   const push = (m: Omit<Msg, 'id' | 'time'>) => setMsgs(prev => [...prev, { ...m, id: prev.length, time: now() }]);
 
-  const MENU: Chip[] = [
-    { label: 'Check my outage status', run: () => lookup('Check my outage status', statusReply) },
-    { label: 'Safety tips', run: () => say('Safety tips', tipsReply()) },
-    { label: 'When will power return?', run: () => lookup('When will power return?', etrReply) },
+  /** "Safety tips" and "When will power return?" only appear once the chat has shown the customer an outage */
+  const [outageShown, setOutageShown] = useState(false);
+  const menuFor = (shown: boolean): Chip[] => [
+    { label: 'Check my outage status', run: () => lookup('Check my outage status', statusReply, true) },
+    ...(shown ? [
+      { label: 'Safety tips', run: () => say('Safety tips', tipsReply()) },
+      { label: 'When will power return?', run: () => lookup('When will power return?', etrReply) },
+    ] : []),
     ...(subscribed ? [] : [{ label: 'Get outage updates', run: openUpdates }]),
   ];
+  const MENU = menuFor(outageShown);
   const more = MENU;
 
   const say = (me: string, bot: React.ReactNode, chips: Chip[] = more) => { push({ role: 'me', body: me }); push({ role: 'bot', body: bot, chips }); };
 
-  async function lookup(me: string, reply: (s: Status) => React.ReactNode) {
+  async function lookup(me: string, reply: (s: Status) => React.ReactNode, reveals = false) {
     push({ role: 'me', body: me });
     setBusy(true);
     try {
       const status = await getJson<Status>(`/api/premises/${encodeURIComponent(premise.pid)}/status${includeRepaired ? '?includeRepaired=1' : ''}`);
-      push({ role: 'bot', body: reply(status), chips: more });
+      const shown = outageShown || (reveals && status.damage.length > 0);
+      setOutageShown(shown);
+      push({ role: 'bot', body: reply(status), chips: menuFor(shown) });
     } catch {
       push({ role: 'bot', body: <div className="cl-bubble"><p>Sorry, I couldn’t check that just now. Please try again in a moment. If this is an emergency, call 911.</p></div>, chips: more });
     } finally { setBusy(false); }
@@ -467,6 +474,7 @@ function Conversation({ premise, includeRepaired, subscribed, openUpdates, sendR
     }]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [premise.pid]);
+  useEffect(() => { setOutageShown(false); }, [premise.pid]);
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [msgs.length, busy, msgs[msgs.length - 1]?.md?.length]);
 
   const last = msgs.length - 1;
