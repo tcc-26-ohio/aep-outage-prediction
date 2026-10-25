@@ -75,7 +75,7 @@ Premises on the map carry only an anonymous ID, service type and customer count.
 
 Customers cannot file outage reports here.
 
-**Risk band.** A color-coded band (none / low / moderate / high / severe) with a confidence indicator sits along the bottom of the map, scored from three factors worth 0–3 each: *timing* (the repair-hours range), *escalation* (customers cut by the outage, circuit-wide, life support) and *surrounding outages* (open damage reports within 2 km). Confidence drops when there is no repair estimate, the damage is off the traced network, or no device isolates it. Computed in `assessRisk` in `server/premises.ts`.
+**Risk band.** A color-coded band (none / low / moderate / high / severe) with a confidence indicator sits along the bottom of the map, scored from four factors worth 0–3 each: *pole age* (average age of poles within 150 m; poles 70 years or older are ignored as unreliable dates), *road exposure* (share of those poles within 25 m of an interstate/highway or a busy primary/secondary road, from OpenStreetMap via `scripts/build-roads.py`; road class stands in for traffic), *escalation* (customers cut by the outage, circuit-wide, life support) and *surrounding outages* (open damage reports within 2 km). Confidence drops when there is no pole age data nearby, the damage is off the traced network, or no device isolates it. Computed in `assessRisk` in `server/premises.ts`; the pole and road lookups are in `server/exposure.ts`.
 
 **Satellite backdrop.** Three quarters of the page is plain satellite imagery (no network or circuit data). Choosing an address flies the map in to it and drops a pin; changing the premise flies back out.
 

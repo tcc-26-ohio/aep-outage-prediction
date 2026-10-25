@@ -81,6 +81,7 @@ export async function getPremise(pid: string): Promise<PremiseMatch | null> {
 
 // ---- per-premise status, estimates and outage reports (used by the client chat's action buttons)
 import { reportLabor } from '../src/map/labor';
+import { exposureAround, type Exposure } from './exposure';
 
 const GIS = new URL('../public/gis/', import.meta.url).pathname;
 // Person-hours -> elapsed hours: a larger crew finishes sooner, a smaller one later. The range is returned instead of person-hours.
@@ -108,19 +109,24 @@ export interface PremiseStatus {
   /** unrepaired damage reports whose isolation point would also cut this premise */
   /** serving transformer's location id */
   transformerId: string;
-  damage: { damage: string; asset: string; reported: string | null; repaired: boolean; circuitWide: boolean; locationId: string; /** where the damage is, [longitude, latitude] */ coords: [number, number] }[];
+  damage: { damage: string; asset: string; reported: string | null; repaired: boolean; circuitWide: boolean; locationId: string; /** where the damage is, [longitude, latitude] */ coords: [number, number]; crew: CrewState | null }[];
+  /** simulated crew progress; the least advanced of the open repairs (null when none has a status) */
+  crew: CrewState | null;
   /** estimated hours from now until the repairs are done (null when no open damage report is tied to the premise) */
   restoration: { lowHours: number; highHours: number } | null;
   risk: Risk;
 }
 
-/** Color-coded outlook for the client map, from timing, escalation and surrounding outages. */
+export const CREW_STATES = ['reported', 'assigned', 'arrived', 'underway'] as const;
+export type CrewState = typeof CREW_STATES[number];
+
+/** Color-coded outlook for the client map, from pole age, road exposure, escalation and surrounding outages. */
 export interface Risk {
   level: 'none' | 'low' | 'moderate' | 'high' | 'severe';
-  /** 0-9: three factors scored 0-3 each */
+  /** 0-12: four factors scored 0-3 each */
   score: number;
   confidence: 'high' | 'medium' | 'low';
-  factors: { timing: RiskFactor; escalation: RiskFactor; nearby: RiskFactor };
+  factors: { poleAge: RiskFactor; roads: RiskFactor; escalation: RiskFactor; nearby: RiskFactor };
   notes: string[];
 }
 interface RiskFactor { label: string; points: number }
@@ -129,18 +135,23 @@ const NEARBY_KM = 2;
 const kmBetween = (a: [number, number], b: [number, number]) => Math.hypot((a[0] - b[0]) * 88.8, (a[1] - b[1]) * 110.54);
 
 function assessRisk(args: {
-  restoration: PremiseStatus['restoration'];
   affecting: { customers: number; approx: boolean; circuitWide: boolean }[];
   nearby: number;
   lifeSupport: boolean;
+  exposure: Exposure;
 }): Risk {
-  const { restoration, affecting, nearby, lifeSupport } = args;
+  const { affecting, nearby, lifeSupport, exposure } = args;
   const none = affecting.length === 0;
-  // timing: how long the repairs are expected to take
-  const hi = restoration?.highHours ?? 0;
-  const timing: RiskFactor = none ? { label: 'No open repairs', points: 0 }
-    : !restoration ? { label: 'No repair estimate', points: 1 }
-    : { label: `${restoration.lowHours}–${restoration.highHours} h to repair`, points: hi <= 4 ? 1 : hi <= 12 ? 2 : 3 };
+  // pole age: older poles around the house are more likely to fail (poles MAX_POLE_AGE years or older are ignored)
+  const { ages } = exposure;
+  const mean = ages.length ? Math.round(ages.reduce((s, a) => s + a, 0) / ages.length) : 0;
+  const poleAge: RiskFactor = !ages.length ? { label: 'No usable pole age data nearby', points: 0 }
+    : { label: `Nearby poles average ${mean} years old`, points: mean < 20 ? 0 : mean < 35 ? 1 : mean < 50 ? 2 : 3 };
+  // roads: poles beside interstates and busy roads are exposed to crashes (OSM road class stands in for traffic)
+  const roadWeight = exposure.nearInterstate + 0.5 * exposure.nearMajor;
+  const share = exposure.poles ? roadWeight / exposure.poles : 0;
+  const roads: RiskFactor = roadWeight === 0 ? { label: exposure.poles ? 'No nearby poles beside major roads' : 'No poles mapped nearby', points: 0 }
+    : { label: [exposure.nearInterstate && `${exposure.nearInterstate} beside an interstate or highway`, exposure.nearMajor && `${exposure.nearMajor} beside a busy road`].filter(Boolean).join(', ') + ` (of ${exposure.poles} nearby poles)`, points: share < 0.1 ? 1 : share < 0.3 ? 2 : 3 };
   // escalation: how far the outage reaches (customers cut, circuit-wide, life support)
   const maxCust = Math.max(0, ...affecting.map(a => a.customers));
   const wide = affecting.some(a => a.circuitWide);
@@ -149,18 +160,18 @@ function assessRisk(args: {
     : { label: `${wide ? 'Circuit-wide' : `${maxCust.toLocaleString()} customers off`}${lifeSupport ? ' · life support' : ''}`, points: Math.min(3, base + (lifeSupport ? 1 : 0)) };
   // surrounding outages: other open damage reports close to the house
   const around: RiskFactor = { label: nearby === 0 ? `None within ${NEARBY_KM} km` : `${nearby} report${nearby === 1 ? '' : 's'} within ${NEARBY_KM} km`, points: nearby === 0 ? 0 : nearby <= 2 ? 1 : nearby <= 6 ? 2 : 3 };
-  const score = timing.points + escalation.points + around.points;
-  const level: Risk['level'] = none && nearby === 0 ? 'none' : score <= 2 ? 'low' : score <= 4 ? 'moderate' : score <= 6 ? 'high' : 'severe';
+  const score = poleAge.points + roads.points + escalation.points + around.points;
+  const level: Risk['level'] = none && nearby === 0 ? 'none' : score <= 3 ? 'low' : score <= 6 ? 'moderate' : score <= 9 ? 'high' : 'severe';
   // confidence: how well the underlying data supports the estimate
   const notes: string[] = [];
   let conf = 3;
   if (none) { conf = 2; notes.push('No open report does not rule out an unreported outage.'); }
   else {
-    if (!restoration) { conf--; notes.push('No repair estimate is available.'); }
     if (affecting.some(a => a.approx)) { conf--; notes.push('Some damage is off the traced network, so reach is approximate.'); }
     if (wide) { conf--; notes.push('No device isolates the damage, so the whole circuit is assumed affected.'); }
   }
-  return { level, score, confidence: conf >= 3 ? 'high' : conf === 2 ? 'medium' : 'low', factors: { timing, escalation, nearby: around }, notes };
+  if (!ages.length) { conf = Math.max(1, conf - 1); notes.push('No pole age data is available near this address.'); }
+  return { level, score, confidence: conf >= 3 ? 'high' : conf === 2 ? 'medium' : 'low', factors: { poleAge, roads, escalation, nearby: around }, notes };
 }
 
 /** includeRepaired is a debug switch: also report damage that has already been repaired. */
@@ -179,15 +190,17 @@ export async function premiseStatus(pid: string, includeRepaired = false): Promi
     if (!circuitWide && !(a.open && openDown[a.open]?.includes(d.xf))) continue;
     hoursByReport.push(reportLabor(a)?.person ?? 0);
     affecting.push({ customers: a.openN ?? 0, approx: !!a.openA, circuitWide });
-    damage.push({ damage: a.damage ?? 'Damage', asset: a.asset ?? 'equipment', reported: a.reported ?? null, repaired, circuitWide, locationId: a.open ?? a.openC ?? '', coords: f.geometry.coordinates });
+    damage.push({ damage: a.damage ?? 'Damage', asset: a.asset ?? 'equipment', reported: a.reported ?? null, repaired, circuitWide, locationId: a.open ?? a.openC ?? '', coords: f.geometry.coordinates, crew: CREW_STATES.includes(a.crew) ? a.crew : null });
   }
   const personHours = hoursByReport.reduce((s, h) => s + h, 0);
   const restoration = personHours > 0 ? { lowHours: Math.max(1, Math.round(personHours / CREW_MAX)), highHours: Math.max(2, Math.round(personHours / CREW_MIN)) } : null;
   const nearby = arcos!.filter(f => (f.properties.repaired === 'No' || includeRepaired) && kmBetween(d.coords, f.geometry.coordinates) <= NEARBY_KM).length;
+  const crewIdx = damage.filter(x => !x.repaired && x.crew).map(x => CREW_STATES.indexOf(x.crew!));
   return {
     transformerId: d.xf,
     damage,
+    crew: crewIdx.length ? CREW_STATES[Math.min(...crewIdx)]! : null,
     restoration,
-    risk: assessRisk({ restoration, affecting, nearby, lifeSupport: p.lifeSupport }),
+    risk: assessRisk({ affecting, nearby, lifeSupport: p.lifeSupport, exposure: await exposureAround(d.coords) }),
   };
 }

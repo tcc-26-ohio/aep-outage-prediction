@@ -37,6 +37,7 @@ Before submitting a report, confirm the specific location and outage details wit
 
 app.get('/api/premises/search', async (c) => {
   try {
+    console.log('Premise search query:', c.req.query('q'));
     return c.json({ matches: await searchPremises(c.req.query('q') ?? '') });
   } catch (error) {
     console.error('Premise search failed:', error);

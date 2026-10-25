@@ -229,6 +229,7 @@ interface Status {
   transformerId: string;
   damage: { damage: string; asset: string; reported: string | null; repaired: boolean; circuitWide: boolean; locationId: string }[];
   restoration: { lowHours: number; highHours: number } | null;
+  crew: 'reported' | 'assigned' | 'arrived' | 'underway' | null;
 }
 interface Chip { label: string; run: () => void }
 interface Msg { id: number; role: 'bot' | 'me'; time: string; body: React.ReactNode; chips?: Chip[]; menu?: boolean; /** streamed LLM answer (markdown) */ md?: string }
@@ -246,6 +247,33 @@ const TIPS = [
   'Never run a generator, grill or camp stove indoors or in a garage: carbon monoxide is deadly.',
   'Use flashlights, not candles. If anyone relies on medical equipment, call your provider or 911 right away.',
 ];
+
+/** Plain-language progress timeline. "Reported" is a real date, crew progress is SIMULATED data, and the restoration window comes from the estimate. */
+const CREW_ORDER = ['reported', 'assigned', 'arrived', 'underway'] as const;
+function Timeline({ status }: { status: Status }) {
+  const dates = status.damage.map(d => d.reported).filter((r): r is string => !!r).sort();
+  const reported = dates[0] ? new Date(`${dates[0]}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date not on file';
+  const r = status.restoration;
+  const at = (h: number) => new Date(Date.now() + h * 3600_000).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  const cur = status.crew ? CREW_ORDER.indexOf(status.crew) : 0;
+  const steps = [
+    { name: 'Outage reported', when: reported },
+    { name: 'Crew assigned', when: cur >= 1 ? 'Done' : 'Next' },
+    { name: 'Crew arrived', when: cur >= 2 ? 'On site' : 'After assignment' },
+    { name: 'Repairs under way', when: cur >= 3 ? (r ? `About ${r.lowHours === r.highHours ? r.lowHours : `${r.lowHours}–${r.highHours}`} h of work left` : 'In progress') : '' },
+    { name: 'Power restored', when: r ? `${at(r.lowHours)} – ${at(r.highHours)}` : 'No estimate yet' },
+  ];
+  return (
+    <ol className="cl-timeline" aria-label="Repair progress">
+      {steps.map((s, i) => (
+        <li key={s.name} className={i <= cur ? 'done' : i === cur + 1 ? 'now' : ''} aria-current={i === cur ? 'step' : undefined}>
+          <strong>{s.name}</strong>
+          {s.when && <span>{s.when}</span>}
+        </li>
+      ))}
+    </ol>
+  );
+}
 
 function Conversation({ premise, includeRepaired, sendRef, onBusy }: { premise: Premise; includeRepaired: boolean; sendRef: React.MutableRefObject<((text: string) => void) | null>; onBusy: (b: boolean) => void }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -304,7 +332,9 @@ function Conversation({ premise, includeRepaired, sendRef, onBusy }: { premise: 
         <>
           <p>There {s.damage.length === 1 ? `is 1 ${includeRepaired ? 'repair' : 'open repair'}` : `are ${s.damage.length} ${includeRepaired ? 'repairs' : 'open repairs'}`} affecting your service{includeRepaired && s.damage.some(d => d.repaired) ? ' (including ones already repaired, debug)' : ''}.</p>
           <p>Power may be restored in about <strong>{s.restoration.lowHours === s.restoration.highHours ? s.restoration.lowHours : `${s.restoration.lowHours}–${s.restoration.highHours}`} hours</strong> from now.</p>
-          <p>This is an estimate, not a promise. Weather, access and crew availability can change it.</p>
+          <Timeline status={s} />
+          {s.crew && <p>Repair crew progress (simulated demo data): {s.crew}.</p>}
+          <p>This is an estimate based on typical repair times for the damage, not a promise. Weather, access and crew availability can change it. Crew progress is simulated for this demo.</p>
         </>
       ) : (
         <>
