@@ -15,7 +15,7 @@ The model-exploration story incorporates the team's confirmed experiments with X
 - Check **7249 Willow Valley** for an open report affecting the home. Choose a related report for the crew demo if possible; otherwise describe the two views as using the same dataset without claiming they show the same incident.
 - Use actual open reports where available. If repaired reports are included through debug mode, label that replay explicitly.
 - Record at 1080p, browser zoom 110%, with bookmarks and notifications hidden.
-- Use `public/title-card.png` for the opening title.
+- Open `/title.html` for the opening title. Click it to reveal the concept diagram; **Back to title** or **Escape** returns to the title. `public/title-card.png` remains available as a static title image.
 - Rehearse against the section boundaries. Speed up loading waits in the edit; leave the useful results readable.
 
 ## 0:00–0:12 · Team, project, and purpose
@@ -28,7 +28,7 @@ Hi, we're TCC: Avaneesh, Dylan, and Cavan. This is GridGuide, helping utility cr
 
 ## 0:12–0:32 · Problem and concept
 
-**On screen:** A damage pin, then a simple diagram: **Utility data → Network relationships → Crew decisions + Customer explanations**. Briefly show both interfaces.
+**On screen:** Click the title page to reveal **Utility data → Network relationships → Crew decisions + Customer explanations**. Then briefly show both interfaces.
 
 **Narration:**
 

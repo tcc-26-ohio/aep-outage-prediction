@@ -7,6 +7,7 @@
     <style>
       @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Manrope:wght@700;800&display=swap');
       *{box-sizing:border-box}
+      [hidden]{display:none!important}
       html,body{height:100%;margin:0}
       body{display:grid;place-items:center;background:#0a0d12;font-family:'DM Sans',system-ui,sans-serif;color:#fff;overflow:hidden}
       /* 16:9 stage that scales to any window; 1920x1080 at 100% */
@@ -27,6 +28,31 @@
       .members{display:flex;gap:3.4em;margin-top:1.1em;font-size:2.1em;font-weight:500;color:#e6edfb}
       .members span{position:relative;padding-left:1.1em}
       .members span::before{content:'';position:absolute;left:0;top:.5em;width:.5em;height:.5em;border-radius:50%;background:#60a5fa}
+      .title-trigger{position:absolute;inset:0;z-index:1;width:100%;height:100%;padding:0;border:0;background:transparent;color:inherit;font:inherit;cursor:pointer}
+      .title-trigger:focus-visible{outline:.25em solid #facc15;outline-offset:-.65em}
+      .click-hint{position:absolute;right:7em;bottom:3.8em;font-size:1.2em;color:#c5dafb}
+      .diagram{position:absolute;inset:0;display:flex;flex-direction:column;padding:5.5em 7em;background:linear-gradient(135deg,rgba(10,29,60,.92),rgba(10,13,18,.97))}
+      .diagram-kicker{margin:0 0 .8em;color:#93c5fd;font-size:1.1em;font-weight:600;letter-spacing:.2em;text-transform:uppercase}
+      h2{margin:0;font:800 4.4em/1.1 Manrope,sans-serif;letter-spacing:-.025em}
+      h2:focus{outline:none}
+      .diagram-intro{margin:.8em 0 0;color:#bcd0f5;font-size:1.6em;line-height:1.4}
+      .flow{display:grid;grid-template-columns:minmax(0,1fr) 4em minmax(0,1fr) 6em minmax(0,1.15fr);align-items:center;margin-top:3.3em;min-height:30em}
+      .flow-card{padding:2.1em;border:1px solid #335e91;border-radius:1.5em;background:linear-gradient(145deg,#102d53,#0b1b32);box-shadow:0 1em 3em #0003}
+      .flow-card h3{margin:.7em 0 .6em;font:800 2em/1.2 Manrope,sans-serif;letter-spacing:-.02em}
+      .flow-card p{margin:0;color:#c9d9ef;font-size:1.35em;line-height:1.6}
+      .card-label{display:inline-block;color:#93c5fd;font-size:1em;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+      .network-card{border-color:#60a5fa;background:linear-gradient(145deg,#153f76,#102646)}
+      .audiences{display:grid;gap:2em;grid-template-rows:14em 14em}
+      .audiences .flow-card{padding:1.6em 2em}
+      .audiences h3{margin:.4em 0}
+      .customer-card{border-color:#a87f2d;background:linear-gradient(145deg,#3a301c,#1c211f)}
+      .customer-card .card-label{color:#facc15}
+      .connector{width:100%;height:30em;overflow:visible}
+      .diagram-footer{display:flex;align-items:center;justify-content:space-between;gap:2em;margin-top:auto;padding-top:2em}
+      .diagram-footer p{margin:0;color:#9db6d7;font-size:1.25em}
+      .back-button{padding:.85em 1.3em;border:1px solid #55749b;border-radius:.7em;background:#102646;color:#e6edfb;font:500 1.1em 'DM Sans',system-ui,sans-serif;cursor:pointer}
+      .back-button:hover{background:#1a3b66}
+      .back-button:focus-visible{outline:.2em solid #facc15;outline-offset:.25em}
     </style>
   </head>
   <body>
@@ -46,7 +72,7 @@
         <circle cx="1700" cy="220" r="11" fill="#ef4444" stroke="#fff" stroke-width="3"/>
         <circle cx="1840" cy="700" r="11" fill="#60a5fa" stroke="#fff" stroke-width="3"/>
       </svg>
-      <div class="content">
+      <div class="content" id="title-content">
         <div class="logo">
           <div class="bolt"><svg viewBox="0 0 24 24" fill="#fff"><path d="M13.5 2 4 14h6l-1.5 8L20 9.5h-6.5z"/></svg></div>
         </div>
@@ -56,6 +82,81 @@
         <div class="team"><small>Team</small><b>TCC</b></div>
         <div class="members"><span>Avaneesh Kad</span><span>Dylan Levy</span><span>Cavan Moriarty</span></div>
       </div>
+      <button class="title-trigger" id="show-diagram" type="button" aria-label="Show how GridGuide works" aria-controls="concept-diagram" aria-expanded="false">
+        <span class="click-hint">Click to see how it works &rarr;</span>
+      </button>
+      <section class="diagram" id="concept-diagram" aria-labelledby="diagram-heading" hidden>
+        <header>
+          <p class="diagram-kicker">GridGuide &middot; How it works</p>
+          <h2 id="diagram-heading" tabindex="-1">One network. Two audiences.</h2>
+          <p class="diagram-intro">Connect utility data to the decisions people need to make.</p>
+        </header>
+        <div class="flow">
+          <div class="flow-card">
+            <span class="card-label">The inputs</span>
+            <h3>Utility data</h3>
+            <p>Equipment &amp; power lines<br>Upstream connections<br>Damage reports</p>
+          </div>
+          <svg class="connector" viewBox="0 0 100 300" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 150H84M70 143L86 150 70 157" fill="none" stroke="#60a5fa" stroke-width="3" vector-effect="non-scaling-stroke"/>
+          </svg>
+          <div class="flow-card network-card">
+            <span class="card-label">The connection</span>
+            <h3>Network relationships</h3>
+            <p>What feeds each home?<br>Who is affected?<br>What equipment is upstream?</p>
+          </div>
+          <svg class="connector" viewBox="0 0 100 300" preserveAspectRatio="none" aria-hidden="true">
+            <path d="M0 150H35V70H84M70 63L86 70 70 77" fill="none" stroke="#60a5fa" stroke-width="3" vector-effect="non-scaling-stroke"/>
+            <path d="M35 150V230H84M70 223L86 230 70 237" fill="none" stroke="#facc15" stroke-width="3" vector-effect="non-scaling-stroke"/>
+            <circle cx="35" cy="150" r="5" fill="#dbeafe"/>
+          </svg>
+          <div class="audiences">
+            <div class="flow-card">
+              <span class="card-label">For crews</span>
+              <h3>Crew decisions</h3>
+              <p>Isolation proposals<br>Repair effort &amp; priorities</p>
+            </div>
+            <div class="flow-card customer-card">
+              <span class="card-label">For customers</span>
+              <h3>Clear explanations</h3>
+              <p>Related damage &amp; risk<br>Estimated restoration ranges</p>
+            </div>
+          </div>
+        </div>
+        <footer class="diagram-footer">
+          <p>Shared network context for crews and customers.</p>
+          <button class="back-button" id="back-to-title" type="button">&larr; Back to title</button>
+        </footer>
+      </section>
     </div>
+    <script>
+      const titleContent = document.getElementById('title-content');
+      const showDiagramButton = document.getElementById('show-diagram');
+      const diagram = document.getElementById('concept-diagram');
+      const diagramHeading = document.getElementById('diagram-heading');
+      const backButton = document.getElementById('back-to-title');
+
+      function showDiagram() {
+        titleContent.hidden = true;
+        showDiagramButton.hidden = true;
+        showDiagramButton.setAttribute('aria-expanded', 'true');
+        diagram.hidden = false;
+        diagramHeading.focus({ preventScroll: true });
+      }
+
+      function showTitle() {
+        diagram.hidden = true;
+        titleContent.hidden = false;
+        showDiagramButton.hidden = false;
+        showDiagramButton.setAttribute('aria-expanded', 'false');
+        showDiagramButton.focus({ preventScroll: true });
+      }
+
+      showDiagramButton.addEventListener('click', showDiagram);
+      backButton.addEventListener('click', showTitle);
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && !diagram.hidden) showTitle();
+      });
+    </script>
   </body>
 </html>
