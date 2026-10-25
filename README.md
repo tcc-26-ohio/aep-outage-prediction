@@ -6,7 +6,7 @@ GridGuide: a Vite/React frontend with a Hono/Bun backend. It has three parts tha
 | --- | --- | --- |
 | Chat app | `/` | Users/Workers AI chat (Vercel AI SDK + Groq) with community outage reports |
 | Network map | `/map.html` | Interactive GIS map of the distribution network, ARCOS damage, isolation planning and issue prioritization |
-| Client chat | `/client.html` | Customer-facing chat: find your premise by address, check status, get an estimated restoration window |
+| Client chat | `/client.html` | Customer-facing chat over a satellite map: find your premise by address, check status, get an estimated restoration window, ask the LLM outage questions |
 
 ```bash
 bun install
@@ -14,7 +14,7 @@ bun install
 
 ## Running
 
-Copy `.env.example` to `.env` and set `GROQ_API_KEY` (only the chat app needs it). Optionally set `GROQ_MODEL` (defaults to `llama-3.3-70b-versatile`), `PORT`, `DATABASE_PATH`.
+Copy `.env.example` to `.env` and set `GROQ_API_KEY` (the chat app and the client chat's free-text answers need it). Optionally set `GROQ_MODEL` (defaults to `llama-3.3-70b-versatile`), `PORT`, `DATABASE_PATH`.
 
 ```bash
 bun run dev          # Vite (http://localhost:5173) + API server (port 3001)
@@ -71,7 +71,13 @@ Premises on the map carry only an anonymous ID, service type and customer count.
 2. Quick actions: **Check my outage status** (open utility damage reports whose isolation would also cut this premise), **When will power return?** (a range of hours from now, derived from the repair work divided by a crew of 2 to 8; set `CREW_MIN`/`CREW_MAX` in `server/premises.ts`), and **Safety tips**.
 3. The bug icon opens debug options: include already-repaired outages (so the storm data shows results), and show location IDs. Both are off by default.
 
-The message box is not wired to a model; customers interact through the action buttons. Customers cannot file outage reports here.
+4. **Free-text questions** go to Groq (`POST /api/client-chat`, model from `GROQ_MODEL`; reasoning is hidden). The model is prompted to be a helpful power-outage assistant and is given the customer's own context (address, life-support flag, open damage reports, restoration estimate) so it never invents causes or times. It can't dispatch crews or change reports, and it sends 911 guidance for downed lines or medical urgency. Answers stream in as markdown. Requires `GROQ_API_KEY`.
+
+Customers cannot file outage reports here.
+
+**Risk band.** A color-coded band (none / low / moderate / high / severe) with a confidence indicator sits along the bottom of the map, scored from three factors worth 0–3 each: *timing* (the repair-hours range), *escalation* (customers cut by the outage, circuit-wide, life support) and *surrounding outages* (open damage reports within 2 km). Confidence drops when there is no repair estimate, the damage is off the traced network, or no device isolates it. Computed in `assessRisk` in `server/premises.ts`.
+
+**Satellite backdrop.** Three quarters of the page is plain satellite imagery (no network or circuit data). Choosing an address flies the map in to it and drops a pin; changing the premise flies back out.
 
 **Before exposing this publicly:** the premise endpoints (`/api/premises/*`) have no authentication or rate limiting, so anyone who can reach the server can look up an address and learn its circuit and service type. Put them behind sign-in first. Restoration times are estimates from standard repair hours, not utility commitments.
 

@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { ArrowUp, Bug, CircleHelp, Home, MapPin, Repeat, Search, ShieldCheck, TriangleAlert, Zap } from 'lucide-react';
+import { SatelliteMap, type MapOutage, type MapRisk } from './SatelliteMap';
 import './client.css';
 
 // The only behaviour on this page is finding which premise the customer is from their address (matched on the server:
-// GET /api/premises/search). The conversation itself is a static sample and the composer is inert: nothing is sent or answered.
+// GET /api/premises/search). Quick-action buttons answer from the utility data; free-text questions go to the LLM (POST /api/client-chat).
 
-interface Premise { pid: string; address: string; service: string; customers: number; lifeSupport: boolean; circuit: string; locationId: string }
+interface Premise { pid: string; address: string; service: string; customers: number; lifeSupport: boolean; circuit: string; locationId: string; coords: [number, number] | null }
 
 const STORAGE_KEY = 'gridguide.premise';
 const DEBUG_KEY = 'gridguide.debug.includeRepaired';
@@ -38,6 +41,12 @@ function remember(p: Premise | null) {
 export function ClientChat() {
   const [premise, setPremise] = useState<Premise | null>(null);
   const [restoring, setRestoring] = useState(true);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [outages, setOutages] = useState<MapOutage[]>([]);
+  const [risk, setRisk] = useState<MapRisk | null>(null);
+  const sendRef = useRef<((text: string) => void) | null>(null);
+  const submit = () => { const t = draft.trim(); if (!t || sending || !sendRef.current) return; sendRef.current(t); setDraft(''); };
   const [debugOpen, setDebugOpen] = useState(false);
   const [includeRepaired, setIncludeRepaired] = useState(() => stored(DEBUG_KEY));
   const [showLocationIds, setShowLocationIds] = useState(() => stored(DEBUG_IDS_KEY));
@@ -51,10 +60,30 @@ export function ClientChat() {
     getJson<Premise>(`/api/premises/${encodeURIComponent(pid)}`).then(setPremise).catch(() => remember(null)).finally(() => setRestoring(false));
   }, []);
 
+  // look up this premise's outage(s) so they can be drawn on the map next to the house
+  useEffect(() => {
+    setOutages([]);
+    setRisk(null);
+    if (!premise) return;
+    const ctl = new AbortController();
+    fetch(`/api/premises/${encodeURIComponent(premise.pid)}/status${includeRepaired ? '?includeRepaired=1' : ''}`, { signal: ctl.signal })
+      .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+            .then((s: { risk: MapRisk; damage: { damage: string; asset: string; repaired: boolean; coords: [number, number] }[] }) => {
+        setRisk(s.risk);
+        const seen = new Set<string>();
+        setOutages(s.damage.filter(d => { const k = d.coords.map(c => c.toFixed(5)).join(','); return seen.has(k) ? false : (seen.add(k), true); })
+          .map(d => ({ coords: d.coords, repaired: d.repaired, label: `${d.damage.replace('Damaged ', '')} · ${d.asset}${d.repaired ? ' (repaired)' : ''}` })));
+      })
+      .catch(e => { if (e?.name !== 'AbortError') setOutages([]); });
+    return () => ctl.abort();
+  }, [premise?.pid, includeRepaired]);
+
   const choose = (p: Premise | null) => { setPremise(p); remember(p); };
 
   return (
     <DebugContext.Provider value={{ showLocationIds }}>
+    <div className="cl-shell">
+    <SatelliteMap target={premise?.coords ? { coords: premise.coords, address: premise.address } : null} outages={outages} risk={risk} />
     <div className="cl">
       <header className="cl-top">
         <a className="cl-brand" href="/client.html" aria-label="GridGuide home">
@@ -63,9 +92,9 @@ export function ClientChat() {
         </a>
         {premise ? (
           <button className="cl-premise" onClick={() => choose(null)} title="Choose a different premise">
-            <Home size={14} /> {premise.address} <Repeat size={13} />
+            <Home size={14} /> <span className="cl-premise-text">{premise.address}</span> <Repeat size={13} />
           </button>
-        ) : <span className="cl-live"><i /> Assistant online</span>}
+        ) : <span className="cl-live"><i /> Online</span>}
         <button className={`cl-icon${includeRepaired || showLocationIds ? ' cl-icon-on' : ''}`} aria-label="Debug options" aria-expanded={debugOpen} onClick={() => setDebugOpen(o => !o)}><Bug size={19} /></button>
         <button className="cl-icon" aria-label="Help and information"><CircleHelp size={20} /></button>
         {debugOpen && (
@@ -87,17 +116,23 @@ export function ClientChat() {
       <main className="cl-main">
         <div className="cl-thread" role="log" aria-label="Conversation">
           <div className="cl-day">Today</div>
-          {restoring ? null : premise ? <Conversation premise={premise} includeRepaired={includeRepaired} /> : <Welcome onChoose={choose} />}
+          {restoring ? null : premise ? <Conversation premise={premise} includeRepaired={includeRepaired} sendRef={sendRef} onBusy={setSending} /> : <Welcome onChoose={choose} />}
         </div>
       </main>
 
       <footer className="cl-foot">
-        <form className="cl-composer" onSubmit={e => e.preventDefault()}>
-          <textarea aria-label="Message" rows={1} disabled={!premise} placeholder={premise ? 'Describe the problem or ask a question…' : 'Enter your address above to start chatting'} />
-          <button type="submit" className="cl-send" aria-label="Send message" disabled={!premise}><ArrowUp size={19} /></button>
+        <form className="cl-composer" onSubmit={e => { e.preventDefault(); submit(); }}>
+          <textarea
+            aria-label="Message" rows={1} disabled={!premise} value={draft} maxLength={1000}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
+            placeholder={premise ? 'Ask a question…' : 'Enter your address to start'}
+          />
+          <button type="submit" className="cl-send" aria-label="Send message" disabled={!premise || sending || !draft.trim()}><ArrowUp size={19} /></button>
         </form>
         <p className="cl-fine">GridGuide gives general guidance and can’t dispatch crews. In an emergency, call 911.</p>
       </footer>
+    </div>
     </div>
     </DebugContext.Provider>
   );
@@ -196,7 +231,10 @@ interface Status {
   restoration: { lowHours: number; highHours: number } | null;
 }
 interface Chip { label: string; run: () => void }
-interface Msg { id: number; role: 'bot' | 'me'; time: string; body: React.ReactNode; chips?: Chip[]; menu?: boolean }
+interface Msg { id: number; role: 'bot' | 'me'; time: string; body: React.ReactNode; chips?: Chip[]; menu?: boolean; /** streamed LLM answer (markdown) */ md?: string }
+
+/** Hide the model's reasoning if it leaks through: complete <think> blocks, and an unfinished one while it streams. */
+const stripThink = (t: string) => t.replace(/<think>[\s\S]*?<\/think>/g, '').replace(/<think>[\s\S]*$/, '').trimStart();
 
 const now = () => new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const plural = (n: number, w: string) => `${n.toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
@@ -209,9 +247,11 @@ const TIPS = [
   'Use flashlights, not candles. If anyone relies on medical equipment, call your provider or 911 right away.',
 ];
 
-function Conversation({ premise, includeRepaired }: { premise: Premise; includeRepaired: boolean }) {
+function Conversation({ premise, includeRepaired, sendRef, onBusy }: { premise: Premise; includeRepaired: boolean; sendRef: React.MutableRefObject<((text: string) => void) | null>; onBusy: (b: boolean) => void }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusyState] = useState(false);
+  const setBusy = (b: boolean) => { setBusyState(b); onBusy(b); };
+  const turns = useRef<{ role: 'user' | 'assistant'; content: string }[]>([]); // free-text exchange sent to the model
   const end = React.useRef<HTMLDivElement>(null);
   const push = (m: Omit<Msg, 'id' | 'time'>) => setMsgs(prev => [...prev, { ...m, id: prev.length, time: now() }]);
 
@@ -284,6 +324,39 @@ function Conversation({ premise, includeRepaired }: { premise: Premise; includeR
     </>
   );
 
+  /** Free-text question -> LLM answer, streamed into a new assistant message. */
+  async function ask(text: string) {
+    push({ role: 'me', body: text });
+    turns.current.push({ role: 'user', content: text });
+    setBusy(true);
+    setMsgs(prev => [...prev, { id: prev.length, role: 'bot', time: now(), body: null, md: '' }]);
+    const update = (md: string, chips?: Chip[]) => setMsgs(prev => prev.map((m, i) => (i === prev.length - 1 && m.md !== undefined ? { ...m, md, chips } : m)));
+    let answer = '';
+    try {
+      const res = await fetch('/api/client-chat', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pid: premise.pid, includeRepaired, messages: turns.current }),
+      });
+      if (!res.ok || !res.body) throw new Error(String(res.status));
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        answer += dec.decode(value, { stream: true });
+        update(stripThink(answer));
+      }
+      answer = stripThink(answer);
+      if (!answer.trim()) throw new Error('empty');
+      turns.current.push({ role: 'assistant', content: answer });
+      update(answer, more);
+    } catch {
+      turns.current.pop(); // drop the unanswered question so the next try starts clean
+      update('Sorry, I couldn’t get an answer just now. Please try again in a moment. If this is an emergency, call 911.', more);
+    } finally { setBusy(false); }
+  }
+  sendRef.current = (t: string) => { void ask(t); };
+
   // opening message
   useEffect(() => {
     setMsgs([{
@@ -301,14 +374,15 @@ function Conversation({ premise, includeRepaired }: { premise: Premise; includeR
     }]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [premise.pid]);
-  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [msgs.length, busy]);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [msgs.length, busy, msgs[msgs.length - 1]?.md?.length]);
 
   const last = msgs.length - 1;
   return (
     <>
       {msgs.map((m, i) => {
+        if (m.md === '') return null; // answer hasn't started streaming: the typing dots stand in for it
         const chips = m.menu ? MENU : i === last ? m.chips : undefined;
-        const body = m.role === 'me' ? <div className="cl-bubble">{m.body}</div> : m.body;
+        const body = m.role === 'me' ? <div className="cl-bubble">{m.body}</div> : m.md !== undefined ? (m.md ? <div className="cl-bubble cl-md"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.md}</ReactMarkdown></div> : null) : m.body;
         return m.role === 'me' ? (
           <div className="cl-row me" key={m.id}>
             <div className="cl-col">{body}<div className="cl-time">{m.time}</div></div>
@@ -321,7 +395,7 @@ function Conversation({ premise, includeRepaired }: { premise: Premise; includeR
           </Assistant>
         );
       })}
-      {busy && (
+      {busy && !msgs[last]?.md && (
         <div className="cl-row">
           <div className="cl-avatar"><Zap size={16} /></div>
           <div className="cl-col"><div className="cl-bubble cl-typing" aria-label="GridGuide is typing"><i /><i /><i /></div></div>

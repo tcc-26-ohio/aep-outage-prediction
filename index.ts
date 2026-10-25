@@ -3,6 +3,7 @@ import { serveStatic } from 'hono/bun';
 import { createGroq } from '@ai-sdk/groq';
 import { convertToModelMessages, streamText, stepCountIs, type UIMessage } from 'ai';
 import { outageTools } from './server/tools';
+import { clientChatStream, type ChatTurn } from './server/clientChat';
 import { getPremise, premiseStatus, searchPremises } from './server/premises';
 
 const app = new Hono();
@@ -60,6 +61,21 @@ app.get('/api/premises/:pid/status', async (c) => {
   } catch (error) {
     console.error('Premise status failed:', error);
     return c.json({ error: 'Status is unavailable.' }, 503);
+  }
+});
+
+app.post('/api/client-chat', async (c) => {
+  try {
+    const body = await c.req.json();
+    const turns: ChatTurn[] = Array.isArray(body.messages)
+      ? body.messages.slice(-20).filter((m: any) => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string' && m.content.trim()).map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 2000) }))
+      : [];
+    if (!turns.length || turns[turns.length - 1]!.role !== 'user') return c.json({ error: 'Send a question.' }, 400);
+    const result = await clientChatStream({ pid: typeof body.pid === 'string' ? body.pid : undefined, includeRepaired: body.includeRepaired === true, messages: turns, signal: c.req.raw.signal });
+    return result.toTextStreamResponse();
+  } catch (error) {
+    console.error('Client chat failed:', error);
+    return c.json({ error: error instanceof Error && error.message.includes('GROQ_API_KEY') ? error.message : 'The assistant is unavailable right now.' }, 503);
   }
 });
 
