@@ -7,12 +7,13 @@ import './map.css';
 import { FILTERS, FILTER_TARGETS, fieldValueExpr, type FilterField } from './filters';
 import { IssuesPanel } from './IssuesPanel';
 import { INDIRECT_LABOR_MULTIPLIER, reportLabor } from './labor';
+import { estimateMaterials } from './materials';
 import { addIcons, ICON_COLORS } from './icons';
 import {
   BASEMAPS, buildLayers, CUSTOMER_COLOR, EMPTY, INTERACTIVE, LAYER_IDS, MIN_ZOOM, PHASE_COLORS, POLE_COLOR, SECONDARY_COLOR, SERVICE_COLOR, SOURCE_IDS, type Basemap,
 } from './layers';
 import {
-  CHAIN_LABEL, CHAIN_SHORT, chainFor, DEFAULT_ON, GROUPS, loadLayer, loadManifest, primaryPath, store, type ChainItem, type LayerKey, type LngLat, type Props,
+  ARCOS_STATUS, CHAIN_LABEL, CHAIN_SHORT, chainFor, DEFAULT_ON, GROUPS, loadLayer, loadManifest, primaryPath, store, type ChainItem, type LayerKey, type LngLat, type Props,
 } from './store';
 
 type Status = 'idle' | 'loading' | 'ready' | 'error';
@@ -66,6 +67,8 @@ export function MapPage() {
   const [debugAddresses, setDebugAddresses] = useState(() => { try { return localStorage.getItem('gridguide.map.debug.addresses') === '1'; } catch { return false; } });
   const [address, setAddress] = useState<{ state: 'idle' | 'loading' | 'ok' | 'error'; address?: string; locationId?: string }>({ state: 'idle' });
   const [arcosOff, setArcosOff] = useState<Set<string>>(new Set());
+  /** repair statuses switched off (see ARCOS_STATUS) */
+  const [statusOff, setStatusOff] = useState<Set<string>>(new Set());
   const [pattern, setPattern] = useState<number | null>(null);
   const [allPatterns, setAllPatterns] = useState(false);
   const [version, setVersion] = useState(0); // bumps when summaries change
@@ -166,8 +169,13 @@ export function MapPage() {
     const map = mapRef.current;
     if (!ready || !map) return;
     const key: any = ['concat', ['coalesce', ['get', 'damage'], 'Other'], '|', ['coalesce', ['get', 'asset'], 'Unknown']];
-    map.setFilter('arcos', arcosOff.size ? ['!', ['in', key, ['literal', [...arcosOff]]]] as any : null);
-  }, [arcosOff, ready]);
+    const status: any = ['case', ['==', ['get', 'repaired'], 'No'], 'open', ['coalesce', ['get', 'rw'], 'older']];
+    const clauses = [
+      ...(arcosOff.size ? [['!', ['in', key, ['literal', [...arcosOff]]]]] : []),
+      ...(statusOff.size ? [['!', ['in', status, ['literal', [...statusOff]]]]] : []),
+    ];
+    map.setFilter('arcos', (clauses.length ? ['all', ...clauses] : null) as any);
+  }, [arcosOff, statusOff, ready]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -371,7 +379,7 @@ function formatToSevenDigits(value: string): string {
               <section className="mp-card" key={group}>
                 <div className="mp-group-head">
                   <h3>{group}</h3>
-                  <button onClick={() => { KEYS.filter(k => store.manifest[k]?.group === group).forEach(k => show(k, true)); if (group === 'Impact') setArcosOff(new Set()); setFOff(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => store.manifest[key.split('.')[0]!]?.group !== group))); }}>Select all</button>
+                  <button onClick={() => { KEYS.filter(k => store.manifest[k]?.group === group).forEach(k => show(k, true)); if (group === 'Impact') { setArcosOff(new Set()); setStatusOff(new Set()); } setFOff(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => store.manifest[key.split('.')[0]!]?.group !== group))); }}>Select all</button>
                   <button onClick={() => KEYS.filter(k => store.manifest[k]?.group === group).forEach(k => show(k, false))}>Clear</button>
                 </div>
                 {KEYS.filter(k => store.manifest[k]?.group === group).map(k => {
@@ -391,6 +399,7 @@ function formatToSevenDigits(value: string): string {
                       {k === 'primary' && visible[k] && <div className="mp-hint">Dashed = underground. Color and width grow with phase count: <i className="ln" style={{ background: PHASE_COLORS[1] }} /> 1 <i className="ln" style={{ background: PHASE_COLORS[2] }} /> 2 <i className="ln" style={{ background: PHASE_COLORS[3] }} /> 3 phases.</div>}
                       {visible[k] && FILTERS[k] && <LayerFilters layer={k} fOff={fOff} setFOff={setFOff} locate={FACILITY_KEYS.includes(k) ? (name: string) => { const f = store.facilities[k]?.get(name); if (f) mapRef.current?.flyTo({ center: f.coords, zoom: 15, duration: 800 }); } : undefined} />}
                       {k === 'arcos' && visible[k] && <div className="mp-hint"><i className="sw sw-dot" style={{ background: '#dc2626' }} /> Click a report to see where to open the circuit (fewest customers off).</div>}
+                      {k === 'arcos' && visible[k] && <ArcosStatusFilter off={statusOff} setOff={setStatusOff} asOf={m.asOf} />}
                       {k === 'arcos' && visible[k] && <ArcosFilter off={arcosOff} setOff={setArcosOff} />}
                       {k === 'secondary' && visible[k] && <div className="mp-hint"><i className="ln" style={{ background: SECONDARY_COLOR }} /> secondary &nbsp; <i className="ln" style={{ background: SERVICE_COLOR }} /> service drop to premise</div>}
                     </div>
@@ -507,6 +516,8 @@ function formatToSevenDigits(value: string): string {
                   </tbody></table>
                   {sel.key === 'arcos' && <ReportLaborCard props={sel.props} />}
                 </section>
+
+                {sel.key === 'arcos' && <RepairMaterialsCard props={sel.props} coords={sel.coords} />}
               </>
             )}
           </div>
@@ -634,6 +645,36 @@ function EquipmentOrder({ pattern, all, setAll, onPattern }: { pattern: number |
 
 const arcosKey = (cat: string, asset: string) => `${cat}|${asset}`;
 
+const STATUS_LABEL: Record<(typeof ARCOS_STATUS)[number], { name: string; note: string; color: string; shape: string }> = {
+  open: { name: 'Open', note: 'not yet repaired', color: ICON_COLORS.arcos, shape: 'tri' },
+  '48h': { name: 'Repaired in last 48 h', note: 'infant mortality watch', color: ICON_COLORS.repaired48, shape: 'dot' },
+  '30d': { name: 'Repaired in last 30 days', note: 'recent history, 2–30 days ago', color: ICON_COLORS.repaired30, shape: 'dia' },
+  older: { name: 'Repaired earlier', note: 'more than 30 days ago, or no repair date', color: ICON_COLORS.repairedOld, shape: 'dot' },
+};
+
+/** Repair-status filter for ARCOS reports. Repaired reports get their own map symbols for the last 48 hours and last 30 days. */
+function ArcosStatusFilter({ off, setOff, asOf }: { off: Set<string>; setOff: (s: Set<string>) => void; asOf?: string }) {
+  const set = (keys: string[], on: boolean) => { const n = new Set(off); keys.forEach(k => (on ? n.delete(k) : n.add(k))); setOff(n); };
+  return (
+    <div className="mp-arcos">
+      <div className="mp-arcos-top">
+        <span>Repair status <small>{ARCOS_STATUS.filter(s => !off.has(s)).length}/{ARCOS_STATUS.length}</small></span>
+        <button onClick={() => set([...ARCOS_STATUS], true)} disabled={!off.size}>Select all</button>
+        <button onClick={() => set([...ARCOS_STATUS], false)} disabled={off.size === ARCOS_STATUS.length}>Clear</button>
+      </div>
+      {ARCOS_STATUS.map(s => (
+        <label className="mp-arcos-sub" key={s} title={STATUS_LABEL[s].note}>
+          <input type="checkbox" checked={!off.has(s)} onChange={e => set([s], e.target.checked)} />
+          <i className={`sw sw-${STATUS_LABEL[s].shape}`} style={{ background: STATUS_LABEL[s].color }} aria-hidden />
+          <span className="mp-name">{STATUS_LABEL[s].name}</span>
+          <span className="mp-count">{store.arcosStatus[s].toLocaleString()}</span>
+        </label>
+      ))}
+      <div className="mp-hint">Windows are measured back from {asOf ? <b>{asOf}</b> : 'the latest date in the data'}, the end of this extract, not from today.</div>
+    </div>
+  );
+}
+
 /** Damage-type filter for ARCOS reports: one group per damage category, with its asset types beneath. */
 function ArcosFilter({ off, setOff }: { off: Set<string>; setOff: (s: Set<string>) => void }) {
   const cats = [...store.arcos].map(([cat, assets]) => ({ cat, assets: [...assets].map(([a, c]) => [a, c.n] as [string, number]).sort((a, b) => b[1] - a[1]), total: [...assets.values()].reduce((a, c) => a + c.n, 0) })).sort((a, b) => b.total - a.total);
@@ -687,6 +728,39 @@ function ReportLaborCard({ props }: { props: Props }) {
         </>
       ) : <div className="mp-hint">No person-hour estimate: no labor unit matches {props.damage ?? 'this damage'} on {props.asset ?? 'an unknown asset'}.</div>}
     </div>
+  );
+}
+
+/** Likely repair materials, inferred from the report's damage type and asset plus the conductor next to it. */
+function RepairMaterialsCard({ props, coords }: { props: Props; coords: LngLat }) {
+  const est = useMemo(() => estimateMaterials(props, coords), [props, coords, store.primarySegs.length]);
+  return (
+    <section className="mp-card">
+      <div className="mp-mats-head"><h3>Likely materials</h3>{est && <span className="mp-mats-tag">{est.work}</span>}</div>
+      {est ? (
+        <>
+          {est.conductor && (
+            <div className="mp-mats-line">
+              <span className="mp-mats-k">Nearest primary line · {est.conductor.meters} m</span>
+              <span className="mp-mats-chips">
+                {[est.conductor.spec, est.conductor.volt, est.conductor.phn ? `${est.conductor.phn}-phase` : '', est.conductor.mount].filter(Boolean).map(t => <span className="mp-mats-chip" key={t}>{t}</span>)}
+                {!(est.conductor.spec || est.conductor.volt || est.conductor.phn || est.conductor.mount) && <span className="mp-mats-chip">no details on file</span>}
+              </span>
+            </div>
+          )}
+          <ul className="mp-mats">
+            {est.items.map(i => (
+              <li key={i.item}>
+                <span className="mp-mats-name">{i.item}</span>
+                {i.qty && <span className="mp-mats-qty">{i.qty}</span>}
+                {i.note && <small>{i.note}</small>}
+              </li>
+            ))}
+          </ul>
+          <div className="mp-hint">Estimated from the damage and asset type, replace in kind. Not a work order.</div>
+        </>
+      ) : <div className="mp-hint">No materials estimate: nothing maps {props.damage ?? 'this damage'} on {props.asset ?? 'an unknown asset'}.</div>}
+    </section>
   );
 }
 

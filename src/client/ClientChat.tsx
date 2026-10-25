@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { ArrowUp, Bug, CircleHelp, Home, MapPin, Repeat, Search, ShieldCheck, TriangleAlert, Zap } from 'lucide-react';
+import { ArrowUp, Bell, Bug, Check, Home, MapPin, Repeat, Search, ShieldCheck, TriangleAlert, Zap } from 'lucide-react';
 import { SatelliteMap, type MapOutage, type MapRisk } from './SatelliteMap';
 import './client.css';
 
@@ -13,6 +13,7 @@ interface Premise { pid: string; address: string; service: string; customers: nu
 const STORAGE_KEY = 'gridguide.premise';
 const DEBUG_KEY = 'gridguide.debug.includeRepaired';
 const DEBUG_IDS_KEY = 'gridguide.debug.showLocationIds';
+const updatesKey = (pid: string) => `gridguide.updates.${pid}`;
 
 /** Debug switches. Messages already on screen read this, so toggling updates them in place. */
 const DebugContext = React.createContext({ showLocationIds: false });
@@ -48,10 +49,18 @@ export function ClientChat() {
   const sendRef = useRef<((text: string) => void) | null>(null);
   const submit = () => { const t = draft.trim(); if (!t || sending || !sendRef.current) return; sendRef.current(t); setDraft(''); };
   const [debugOpen, setDebugOpen] = useState(false);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
+  const [signedUp, setSignedUp] = useState<string[]>([]); // pids this browser has signed up for updates
+  const subscribed = !!premise && signedUp.includes(premise.pid);
+  const openUpdates = () => { setDebugOpen(false); setUpdatesOpen(true); };
   const [includeRepaired, setIncludeRepaired] = useState(() => stored(DEBUG_KEY));
   const [showLocationIds, setShowLocationIds] = useState(() => stored(DEBUG_IDS_KEY));
   const toggleRepaired = (on: boolean) => { setIncludeRepaired(on); store(DEBUG_KEY, on); };
   const toggleIds = (on: boolean) => { setShowLocationIds(on); store(DEBUG_IDS_KEY, on); };
+
+  useEffect(() => {
+    if (premise && stored(updatesKey(premise.pid)) && !signedUp.includes(premise.pid)) setSignedUp(s => [...s, premise.pid]);
+  }, [premise?.pid]);
 
   // restore the premise chosen last time, if it still exists
   useEffect(() => {
@@ -95,8 +104,14 @@ export function ClientChat() {
             <Home size={14} /> <span className="cl-premise-text">{premise.address}</span> <Repeat size={13} />
           </button>
         ) : <span className="cl-live"><i /> Online</span>}
-        <button className={`cl-icon${includeRepaired || showLocationIds ? ' cl-icon-on' : ''}`} aria-label="Debug options" aria-expanded={debugOpen} onClick={() => setDebugOpen(o => !o)}><Bug size={19} /></button>
-        <button className="cl-icon" aria-label="Help and information"><CircleHelp size={20} /></button>
+        <button className={`cl-icon${includeRepaired || showLocationIds ? ' cl-icon-on' : ''}`} aria-label="Debug options" aria-expanded={debugOpen} onClick={() => { setUpdatesOpen(false); setDebugOpen(o => !o); }}><Bug size={19} /></button>
+        <button className={`cl-icon${subscribed ? ' cl-icon-ok' : ''}`} aria-label="Get outage updates" aria-expanded={updatesOpen} onClick={() => (updatesOpen ? setUpdatesOpen(false) : openUpdates())}><Bell size={20} /></button>
+        {updatesOpen && (
+          <UpdatesForm
+            premise={premise} subscribed={subscribed} onChoose={choose} onClose={() => setUpdatesOpen(false)}
+            onDone={() => { if (premise) { store(updatesKey(premise.pid), true); setSignedUp(s => [...s, premise.pid]); } }}
+          />
+        )}
         {debugOpen && (
           <div className="cl-debug" role="dialog" aria-label="Debug options">
             <h4>Debug</h4>
@@ -116,7 +131,7 @@ export function ClientChat() {
       <main className="cl-main">
         <div className="cl-thread" role="log" aria-label="Conversation">
           <div className="cl-day">Today</div>
-          {restoring ? null : premise ? <Conversation premise={premise} includeRepaired={includeRepaired} sendRef={sendRef} onBusy={setSending} /> : <Welcome onChoose={choose} />}
+          {restoring ? null : premise ? <Conversation premise={premise} includeRepaired={includeRepaired} subscribed={subscribed} openUpdates={openUpdates} sendRef={sendRef} onBusy={setSending} /> : <Welcome onChoose={choose} />}
         </div>
       </main>
 
@@ -165,7 +180,7 @@ function Welcome({ onChoose }: { onChoose: (p: Premise) => void }) {
 }
 
 /** Type an address, pick the match: the server resolves it to the premise. */
-function AddressPicker({ onChoose }: { onChoose: (p: Premise) => void }) {
+function AddressPicker({ onChoose, id = 'cl-addr-list' }: { onChoose: (p: Premise) => void; id?: string }) {
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<Premise[] | null>(null);
   const [active, setActive] = useState(0);
@@ -201,12 +216,12 @@ function AddressPicker({ onChoose }: { onChoose: (p: Premise) => void }) {
           <input
             value={query} onChange={e => setQuery(e.target.value)} onKeyDown={onKey} autoFocus autoComplete="off"
             placeholder="Start with your house number, e.g. 2347 Gardner"
-            role="combobox" aria-expanded={!!matches?.length} aria-controls="cl-addr-list" aria-autocomplete="list"
+            role="combobox" aria-expanded={!!matches?.length} aria-controls={id} aria-autocomplete="list"
           />
         </div>
       </label>
       {matches && matches.length > 0 && (
-        <ul className="cl-results" id="cl-addr-list" role="listbox" aria-label="Matching addresses">
+        <ul className="cl-results" id={id} role="listbox" aria-label="Matching addresses">
           {matches.map((m, i) => (
             <li key={m.pid} role="option" aria-selected={i === active}>
               <button className={i === active ? 'on' : ''} onMouseEnter={() => setActive(i)} onClick={() => onChoose(m)}>
@@ -229,6 +244,7 @@ interface Status {
   transformerId: string;
   damage: { damage: string; asset: string; reported: string | null; repaired: boolean; circuitWide: boolean; locationId: string }[];
   restoration: { lowHours: number; highHours: number } | null;
+  crew: 'reported' | 'assigned' | 'arrived' | 'underway' | null;
 }
 interface Chip { label: string; run: () => void }
 interface Msg { id: number; role: 'bot' | 'me'; time: string; body: React.ReactNode; chips?: Chip[]; menu?: boolean; /** streamed LLM answer (markdown) */ md?: string }
@@ -247,7 +263,79 @@ const TIPS = [
   'Use flashlights, not candles. If anyone relies on medical equipment, call your provider or 911 right away.',
 ];
 
-function Conversation({ premise, includeRepaired, sendRef, onBusy }: { premise: Premise; includeRepaired: boolean; sendRef: React.MutableRefObject<((text: string) => void) | null>; onBusy: (b: boolean) => void }) {
+/** Plain-language progress timeline. "Reported" is a real date, crew progress is SIMULATED data, and the restoration window comes from the estimate. */
+const CREW_ORDER = ['reported', 'assigned', 'arrived', 'underway'] as const;
+function Timeline({ status }: { status: Status }) {
+  const dates = status.damage.map(d => d.reported).filter((r): r is string => !!r).sort();
+  const reported = dates[0] ? new Date(`${dates[0]}T12:00:00`).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'Date not on file';
+  const r = status.restoration;
+  const at = (h: number) => new Date(Date.now() + h * 3600_000).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  const cur = status.crew ? CREW_ORDER.indexOf(status.crew) : 0;
+  const steps = [
+    { name: 'Outage reported', when: reported },
+    { name: 'Crew assigned', when: cur >= 1 ? 'Done' : 'Next' },
+    { name: 'Crew arrived', when: cur >= 2 ? 'On site' : 'After assignment' },
+    { name: 'Repairs under way', when: cur >= 3 ? (r ? `About ${r.lowHours === r.highHours ? r.lowHours : `${r.lowHours}–${r.highHours}`} h of work left` : 'In progress') : '' },
+    { name: 'Power restored', when: r ? `${at(r.lowHours)} – ${at(r.highHours)}` : 'No estimate yet' },
+  ];
+  return (
+    <ol className="cl-timeline" aria-label="Repair progress">
+      {steps.map((s, i) => (
+        <li key={s.name} className={i <= cur ? 'done' : i === cur + 1 ? 'now' : ''} aria-current={i === cur ? 'step' : undefined}>
+          <strong>{s.name}</strong>
+          {s.when && <span>{s.when}</span>}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** Offered under outage status replies: a nudge to sign up for updates, or a confirmation once they have. */
+function UpdatesOffer({ subscribed, open }: { subscribed: boolean; open: () => void }) {
+  return subscribed
+    ? <p className="cl-offer ok"><Check size={14} /> You’re signed up for updates on this outage.</p>
+    : <p className="cl-offer">Want a heads-up as this outage progresses? <button type="button" className="cl-link" onClick={open}>Get outage updates</button></p>;
+}
+
+/** Bell dropdown: sign up for updates about the outage at the customer's premise. Asks for the address only when none is chosen yet. */
+function UpdatesForm({ premise, subscribed, onChoose, onClose, onDone }: { premise: Premise | null; subscribed: boolean; onChoose: (p: Premise) => void; onClose: () => void; onDone: () => void }) {
+  const [contact, setContact] = useState('');
+  const [state, setState] = useState<'idle' | 'sending' | 'done'>(subscribed ? 'done' : 'idle');
+  const [error, setError] = useState('');
+  useEffect(() => { if (subscribed) setState('done'); }, [subscribed]);
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!premise || !contact.trim()) return;
+    setState('sending'); setError('');
+    try {
+      const res = await fetch(`/api/premises/${encodeURIComponent(premise.pid)}/updates`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ contact }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'Something went wrong. Please try again.');
+      onDone(); setState('done');
+    } catch (err) { setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.'); setState('idle'); }
+  };
+  return (
+    <div className="cl-debug cl-updates" role="dialog" aria-label="Get outage updates">
+      <div className="cl-updates-head"><h4>Outage updates</h4><button type="button" className="cl-link" onClick={onClose}>Close</button></div>
+      {state === 'done' && premise ? (
+        <p className="cl-updates-done"><Check size={16} /> You’re signed up for updates on the outage at <strong>{premise.address}</strong>.</p>
+      ) : (
+        <form onSubmit={submit}>
+          {premise ? <p className="cl-updates-addr"><Home size={14} /> {premise.address}</p> : <AddressPicker onChoose={onChoose} id="cl-upd-addr-list" />}
+          <label className="cl-field">
+            <span>Email or mobile number</span>
+            <input className="cl-text" value={contact} onChange={e => setContact(e.target.value)} autoComplete="email" inputMode="email" maxLength={254} placeholder="you@example.com or 540-555-0123" disabled={!premise} />
+          </label>
+          {error && <p className="cl-updates-err" role="alert">{error}</p>}
+          <button type="submit" className="cl-submit" disabled={!premise || !contact.trim() || state === 'sending'}>{state === 'sending' ? 'Signing up…' : 'Send me updates'}</button>
+          <small className="cl-updates-fine">Only used to tell you how this outage is progressing.</small>
+        </form>
+      )}
+    </div>
+  );
+}
+
+function Conversation({ premise, includeRepaired, subscribed, openUpdates, sendRef, onBusy }: { premise: Premise; includeRepaired: boolean; subscribed: boolean; openUpdates: () => void; sendRef: React.MutableRefObject<((text: string) => void) | null>; onBusy: (b: boolean) => void }) {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [busy, setBusyState] = useState(false);
   const setBusy = (b: boolean) => { setBusyState(b); onBusy(b); };
@@ -255,21 +343,29 @@ function Conversation({ premise, includeRepaired, sendRef, onBusy }: { premise: 
   const end = React.useRef<HTMLDivElement>(null);
   const push = (m: Omit<Msg, 'id' | 'time'>) => setMsgs(prev => [...prev, { ...m, id: prev.length, time: now() }]);
 
-  const MENU: Chip[] = [
-    { label: 'Check my outage status', run: () => lookup('Check my outage status', statusReply) },
-    { label: 'Safety tips', run: () => say('Safety tips', tipsReply()) },
-    { label: 'When will power return?', run: () => lookup('When will power return?', etrReply) },
+  /** "Safety tips" and "When will power return?" only appear once the chat has shown the customer an outage */
+  const [outageShown, setOutageShown] = useState(false);
+  const menuFor = (shown: boolean): Chip[] => [
+    { label: 'Check my outage status', run: () => lookup('Check my outage status', statusReply, true) },
+    ...(shown ? [
+      { label: 'Safety tips', run: () => say('Safety tips', tipsReply()) },
+      { label: 'When will power return?', run: () => lookup('When will power return?', etrReply) },
+    ] : []),
+    ...(subscribed ? [] : [{ label: 'Get outage updates', run: openUpdates }]),
   ];
+  const MENU = menuFor(outageShown);
   const more = MENU;
 
   const say = (me: string, bot: React.ReactNode, chips: Chip[] = more) => { push({ role: 'me', body: me }); push({ role: 'bot', body: bot, chips }); };
 
-  async function lookup(me: string, reply: (s: Status) => React.ReactNode) {
+  async function lookup(me: string, reply: (s: Status) => React.ReactNode, reveals = false) {
     push({ role: 'me', body: me });
     setBusy(true);
     try {
       const status = await getJson<Status>(`/api/premises/${encodeURIComponent(premise.pid)}/status${includeRepaired ? '?includeRepaired=1' : ''}`);
-      push({ role: 'bot', body: reply(status), chips: more });
+      const shown = outageShown || (reveals && status.damage.length > 0);
+      setOutageShown(shown);
+      push({ role: 'bot', body: reply(status), chips: menuFor(shown) });
     } catch {
       push({ role: 'bot', body: <div className="cl-bubble"><p>Sorry, I couldn’t check that just now. Please try again in a moment. If this is an emergency, call 911.</p></div>, chips: more });
     } finally { setBusy(false); }
@@ -294,6 +390,7 @@ function Conversation({ premise, includeRepaired, sendRef, onBusy }: { premise: 
             {s.damage.length > 4 && <div className="cl-more">+ {s.damage.length - 4} more</div>}
           </div>
         ) : <p>No open utility damage reports affect your service.</p>}
+        {s.damage.length > 0 && <UpdatesOffer subscribed={subscribed} open={openUpdates} />}
       </div>
     </>
   );
@@ -304,7 +401,10 @@ function Conversation({ premise, includeRepaired, sendRef, onBusy }: { premise: 
         <>
           <p>There {s.damage.length === 1 ? `is 1 ${includeRepaired ? 'repair' : 'open repair'}` : `are ${s.damage.length} ${includeRepaired ? 'repairs' : 'open repairs'}`} affecting your service{includeRepaired && s.damage.some(d => d.repaired) ? ' (including ones already repaired, debug)' : ''}.</p>
           <p>Power may be restored in about <strong>{s.restoration.lowHours === s.restoration.highHours ? s.restoration.lowHours : `${s.restoration.lowHours}–${s.restoration.highHours}`} hours</strong> from now.</p>
-          <p>This is an estimate, not a promise. Weather, access and crew availability can change it.</p>
+          <Timeline status={s} />
+          {s.crew && <p>Repair crew progress (simulated demo data): {s.crew}.</p>}
+          <p>This is an estimate based on typical repair times for the damage, not a promise. Weather, access and crew availability can change it. Crew progress is simulated for this demo.</p>
+          <UpdatesOffer subscribed={subscribed} open={openUpdates} />
         </>
       ) : (
         <>
@@ -335,7 +435,7 @@ function Conversation({ premise, includeRepaired, sendRef, onBusy }: { premise: 
     try {
       const res = await fetch('/api/client-chat', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ pid: premise.pid, includeRepaired, messages: turns.current }),
+        body: JSON.stringify({ pid: premise.pid, includeRepaired, subscribed, messages: turns.current }),
       });
       if (!res.ok || !res.body) throw new Error(String(res.status));
       const reader = res.body.getReader();
@@ -374,6 +474,7 @@ function Conversation({ premise, includeRepaired, sendRef, onBusy }: { premise: 
     }]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [premise.pid]);
+  useEffect(() => { setOutageShown(false); }, [premise.pid]);
   useEffect(() => { end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [msgs.length, busy, msgs[msgs.length - 1]?.md?.length]);
 
   const last = msgs.length - 1;

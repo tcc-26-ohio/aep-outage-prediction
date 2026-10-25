@@ -82,7 +82,7 @@ export function buildLayers(): LayerSpecification[] {
     symbol('fuses', 'fuses', { layout: { 'icon-image': 'fuse', 'icon-size': ['interpolate', ['linear'], ['zoom'], 11, 0.4, 17, 0.85] }, rest: { minzoom: MIN_ZOOM.fuses } }),
     symbol('switches', 'switches', { layout: { 'icon-image': ['case', ['==', ['get', 'state'], 'Open'], 'sw-open', 'sw-closed'], 'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.5, 17, 1] } }),
     symbol('reclosers', 'reclosers', { layout: { 'icon-image': 'recloser', 'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.55, 17, 1.1] } }),
-    symbol('arcos', 'arcos', { layout: { 'icon-image': 'arcos', 'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.5, 17, 1] } }),
+    symbol('arcos', 'arcos', { layout: { 'icon-image': ['case', ['==', ['get', 'repaired'], 'No'], 'arcos', ['match', ['get', 'rw'], '48h', 'arcos-48h', '30d', 'arcos-30d', 'arcos-old']], 'icon-size': ['interpolate', ['linear'], ['zoom'], 9, 0.5, 17, 1] } }),
     symbol('hospitals', 'hospitals', { layout: { 'icon-image': 'hospital', 'icon-size': 1.1 } }),
     symbol('fire', 'fire', { layout: { 'icon-image': 'fire', 'icon-size': 0.95 } }),
     symbol('ambulance', 'ambulance', { layout: { 'icon-image': 'ambulance', 'icon-size': 0.95 } }),

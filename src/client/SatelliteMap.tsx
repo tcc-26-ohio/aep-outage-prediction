@@ -14,7 +14,7 @@ export interface MapRisk {
   level: 'none' | 'low' | 'moderate' | 'high' | 'severe';
   score: number;
   confidence: 'high' | 'medium' | 'low';
-  factors: Record<'timing' | 'escalation' | 'nearby', { label: string; points: number }>;
+  factors: Record<'poleAge' | 'roads' | 'wind' | 'winter' | 'escalation' | 'nearby', { label: string; points: number }>;
   notes: string[];
 }
 export interface MapOutage { coords: [number, number]; label: string; repaired: boolean }
@@ -85,9 +85,15 @@ export function SatelliteMap({ target, outages, risk }: { target: MapTarget | nu
         layers: [{ id: 'sat', type: 'raster', source: 'sat' }],
       },
       ...OVERVIEW,
-      interactive: false,
+      // zoom and pan only: no rotating or tilting the imagery
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+      maxZoom: 19,
       attributionControl: { compact: true },
     });
+    m.touchZoomRotate.disableRotation();
+    m.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.current = m;
     m.on('load', () => { ready.current = true; if (pending.current) fly(pending.current); });
     return () => { m.remove(); map.current = null; };
