@@ -82,6 +82,7 @@ export async function getPremise(pid: string): Promise<PremiseMatch | null> {
 // ---- per-premise status, estimates and outage reports (used by the client chat's action buttons)
 import { reportLabor } from '../src/map/labor';
 import { exposureAround, type Exposure } from './exposure';
+import { windAssessment, windFactor, winterFactor, type WindDetail } from './wind';
 
 const GIS = new URL('../public/gis/', import.meta.url).pathname;
 // Person-hours -> elapsed hours: a larger crew finishes sooner, a smaller one later. The range is returned instead of person-hours.
@@ -110,6 +111,8 @@ export interface PremiseStatus {
   /** serving transformer's location id */
   transformerId: string;
   damage: { damage: string; asset: string; reported: string | null; repaired: boolean; circuitWide: boolean; locationId: string; /** where the damage is, [longitude, latitude] */ coords: [number, number]; crew: CrewState | null }[];
+  /** wind loading on the pole and transformer serving the premise (null without weather or equipment data) */
+  wind: WindDetail | null;
   /** simulated crew progress; the least advanced of the open repairs (null when none has a status) */
   crew: CrewState | null;
   /** estimated hours from now until the repairs are done (null when no open damage report is tied to the premise) */
@@ -120,13 +123,13 @@ export interface PremiseStatus {
 export const CREW_STATES = ['reported', 'assigned', 'arrived', 'underway'] as const;
 export type CrewState = typeof CREW_STATES[number];
 
-/** Color-coded outlook for the client map, from pole age, road exposure, escalation and surrounding outages. */
+/** Color-coded outlook for the client map, from pole age, road exposure, wind loading, escalation and surrounding outages. */
 export interface Risk {
   level: 'none' | 'low' | 'moderate' | 'high' | 'severe';
-  /** 0-12: four factors scored 0-3 each */
+  /** 0-18: six factors scored 0-3 each */
   score: number;
   confidence: 'high' | 'medium' | 'low';
-  factors: { poleAge: RiskFactor; roads: RiskFactor; escalation: RiskFactor; nearby: RiskFactor };
+  factors: { poleAge: RiskFactor; roads: RiskFactor; wind: RiskFactor; winter: RiskFactor; escalation: RiskFactor; nearby: RiskFactor };
   notes: string[];
 }
 interface RiskFactor { label: string; points: number }
@@ -139,8 +142,9 @@ function assessRisk(args: {
   nearby: number;
   lifeSupport: boolean;
   exposure: Exposure;
+  wind: WindDetail | null;
 }): Risk {
-  const { affecting, nearby, lifeSupport, exposure } = args;
+  const { affecting, nearby, lifeSupport, exposure, wind: w } = args;
   const none = affecting.length === 0;
   // pole age: older poles around the house are more likely to fail (poles MAX_POLE_AGE years or older are ignored)
   const { ages } = exposure;
@@ -152,6 +156,10 @@ function assessRisk(args: {
   const share = exposure.poles ? roadWeight / exposure.poles : 0;
   const roads: RiskFactor = roadWeight === 0 ? { label: exposure.poles ? 'No nearby poles beside major roads' : 'No poles mapped nearby', points: 0 }
     : { label: [exposure.nearInterstate && `${exposure.nearInterstate} beside an interstate or highway`, exposure.nearMajor && `${exposure.nearMajor} beside a busy road`].filter(Boolean).join(', ') + ` (of ${exposure.poles} nearby poles)`, points: share < 0.1 ? 1 : share < 0.3 ? 2 : 3 };
+  // wind and trees: the area's typical yearly peak gust loading the serving pole (ANSI O5.1 class rating) plus tree canopy along the line
+  const wind: RiskFactor = windFactor(w);
+  // ice and wet ground: the worst freezing-rain event on record, plus how often gusty days find the ground saturated
+  const winter: RiskFactor = winterFactor(w);
   // escalation: how far the outage reaches (customers cut, circuit-wide, life support)
   const maxCust = Math.max(0, ...affecting.map(a => a.customers));
   const wide = affecting.some(a => a.circuitWide);
@@ -160,8 +168,8 @@ function assessRisk(args: {
     : { label: `${wide ? 'Circuit-wide' : `${maxCust.toLocaleString()} customers off`}${lifeSupport ? ' · life support' : ''}`, points: Math.min(3, base + (lifeSupport ? 1 : 0)) };
   // surrounding outages: other open damage reports close to the house
   const around: RiskFactor = { label: nearby === 0 ? `None within ${NEARBY_KM} km` : `${nearby} report${nearby === 1 ? '' : 's'} within ${NEARBY_KM} km`, points: nearby === 0 ? 0 : nearby <= 2 ? 1 : nearby <= 6 ? 2 : 3 };
-  const score = poleAge.points + roads.points + escalation.points + around.points;
-  const level: Risk['level'] = none && nearby === 0 ? 'none' : score <= 3 ? 'low' : score <= 6 ? 'moderate' : score <= 9 ? 'high' : 'severe';
+  const score = poleAge.points + roads.points + wind.points + winter.points + escalation.points + around.points;
+  const level: Risk['level'] = none && nearby === 0 ? 'none' : score <= 5 ? 'low' : score <= 9 ? 'moderate' : score <= 13 ? 'high' : 'severe';
   // confidence: how well the underlying data supports the estimate
   const notes: string[] = [];
   let conf = 3;
@@ -171,7 +179,10 @@ function assessRisk(args: {
     if (wide) { conf--; notes.push('No device isolates the damage, so the whole circuit is assumed affected.'); }
   }
   if (!ages.length) { conf = Math.max(1, conf - 1); notes.push('No pole age data is available near this address.'); }
-  return { level, score, confidence: conf >= 3 ? 'high' : conf === 2 ? 'medium' : 'low', factors: { poleAge, roads, escalation, nearby: around }, notes };
+  if (!w) { conf = Math.max(1, conf - 1); notes.push('No wind or equipment data is available for this address.'); }
+  else if (w.exposed && !w.canopy) { conf = Math.max(1, conf - 1); notes.push('No tree canopy data is available for this address.'); }
+  if (w && w.exposed && w.assumed.length) { conf = Math.max(1, conf - 1); notes.push(`Some pole details were missing (${w.assumed.join(', ')}), so typical values were used for the wind load.`); }
+  return { level, score, confidence: conf >= 3 ? 'high' : conf === 2 ? 'medium' : 'low', factors: { poleAge, roads, wind, winter, escalation, nearby: around }, notes };
 }
 
 /** includeRepaired is a debug switch: also report damage that has already been repaired. */
@@ -195,12 +206,14 @@ export async function premiseStatus(pid: string, includeRepaired = false): Promi
   const personHours = hoursByReport.reduce((s, h) => s + h, 0);
   const restoration = personHours > 0 ? { lowHours: Math.max(1, Math.round(personHours / CREW_MAX)), highHours: Math.max(2, Math.round(personHours / CREW_MIN)) } : null;
   const nearby = arcos!.filter(f => (f.properties.repaired === 'No' || includeRepaired) && kmBetween(d.coords, f.geometry.coordinates) <= NEARBY_KM).length;
+  const wind = await windAssessment(d.xf, d.coords);
   const crewIdx = damage.filter(x => !x.repaired && x.crew).map(x => CREW_STATES.indexOf(x.crew!));
   return {
     transformerId: d.xf,
     damage,
     crew: crewIdx.length ? CREW_STATES[Math.min(...crewIdx)]! : null,
     restoration,
-    risk: assessRisk({ affecting, nearby, lifeSupport: p.lifeSupport, exposure: await exposureAround(d.coords) }),
+    wind,
+    risk: assessRisk({ affecting, nearby, lifeSupport: p.lifeSupport, exposure: await exposureAround(d.coords), wind }),
   };
 }

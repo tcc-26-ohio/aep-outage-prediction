@@ -14,18 +14,21 @@ const GRID = 0.002;
 const ROAD_GRID = 0.005;
 const key = (x: number, y: number, size: number) => `${Math.floor(x / size)},${Math.floor(y / size)}`;
 
-interface Pole { c: Pt; yr: number | null }
+export interface Pole { c: Pt; yr: number | null; loc?: string; cls?: string; h?: string; mat?: string }
 interface Seg { a: Pt; b: Pt; interstate: boolean }
 let poleGrid: Map<string, Pole[]> | null = null;
+const poleByLoc = new Map<string, Pole>();
 let roadGrid: Map<string, Seg[]> | null = null;
 
 async function load() {
   if (poleGrid && roadGrid) return;
-  const poles = (await Bun.file(GIS + 'poles.geojson').json()) as { features: { geometry: { coordinates: Pt }; properties: { yr?: number | null } }[] };
+  const poles = (await Bun.file(GIS + 'poles.geojson').json()) as { features: { geometry: { coordinates: Pt }; properties: { yr?: number | null; loc?: string; cls?: string; h?: string; mat?: string } }[] };
   poleGrid = new Map();
   for (const f of poles.features) {
     const c = f.geometry.coordinates, k = key(c[0], c[1], GRID);
-    (poleGrid.get(k) ?? poleGrid.set(k, []).get(k)!).push({ c, yr: f.properties.yr ?? null });
+    const p = f.properties, pole: Pole = { c, yr: p.yr ?? null, loc: p.loc, cls: p.cls, h: p.h, mat: p.mat };
+    (poleGrid.get(k) ?? poleGrid.set(k, []).get(k)!).push(pole);
+    if (p.loc && !poleByLoc.has(p.loc)) poleByLoc.set(p.loc, pole);
   }
   roadGrid = new Map();
   // roads.json comes from scripts/build-roads.py; without it nothing counts as near a road
@@ -85,5 +88,35 @@ export async function exposureAround(c: Pt): Promise<Exposure> {
       const road = nearRoad(p.c);
       if (road === 'interstate') out.nearInterstate++; else if (road) out.nearMajor++;
     }
+  return out;
+}
+
+/** The pole carrying the equipment at a location id (transformers share their pole's location id). */
+export async function poleAtLoc(loc: string): Promise<Pole | undefined> {
+  await load();
+  return poleByLoc.get(loc);
+}
+
+/** Closest pole to a point within maxKm. */
+export async function nearestPole(c: Pt, maxKm: number): Promise<Pole | undefined> {
+  await load();
+  let best: Pole | undefined, bd = maxKm;
+  const cx = Math.floor(c[0] / GRID), cy = Math.floor(c[1] / GRID), reach = Math.ceil(maxKm / (GRID * KX)) + 1;
+  for (let x = cx - reach; x <= cx + reach; x++) for (let y = cy - reach; y <= cy + reach; y++)
+    for (const p of poleGrid!.get(`${x},${y}`) ?? []) {
+      const d = Math.hypot((p.c[0] - c[0]) * KX, (p.c[1] - c[1]) * KY);
+      if (d <= bd) { bd = d; best = p; }
+    }
+  return best;
+}
+
+/** Coordinates of every pole within radiusKm of a point (the poles along the line serving it). */
+export async function polesWithin(c: Pt, radiusKm: number): Promise<Pt[]> {
+  await load();
+  const out: Pt[] = [];
+  const cx = Math.floor(c[0] / GRID), cy = Math.floor(c[1] / GRID), reach = Math.ceil(radiusKm / (GRID * KX)) + 1;
+  for (let x = cx - reach; x <= cx + reach; x++) for (let y = cy - reach; y <= cy + reach; y++)
+    for (const p of poleGrid!.get(`${x},${y}`) ?? [])
+      if (Math.hypot((p.c[0] - c[0]) * KX, (p.c[1] - c[1]) * KY) <= radiusKm) out.push(p.c);
   return out;
 }

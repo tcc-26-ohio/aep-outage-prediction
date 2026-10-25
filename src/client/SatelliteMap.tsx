@@ -14,7 +14,7 @@ export interface MapRisk {
   level: 'none' | 'low' | 'moderate' | 'high' | 'severe';
   score: number;
   confidence: 'high' | 'medium' | 'low';
-  factors: Record<'poleAge' | 'roads' | 'escalation' | 'nearby', { label: string; points: number }>;
+  factors: Record<'poleAge' | 'roads' | 'wind' | 'winter' | 'escalation' | 'nearby', { label: string; points: number }>;
   notes: string[];
 }
 export interface MapOutage { coords: [number, number]; label: string; repaired: boolean }
