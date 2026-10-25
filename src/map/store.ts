@@ -15,7 +15,13 @@ export interface Manifest {
   source: string;
   count: number;
   fields: [string, string][];
+  /** ARCOS only: the date the repair windows (48 h / 30 days) are measured from, the latest date in the extract */
+  asOf?: string;
 }
+
+/** ARCOS repair status: open, or repaired within 48 h / 30 days of the extract date, or earlier. */
+export const ARCOS_STATUS = ['open', '48h', '30d', 'older'] as const;
+export type ArcosStatus = typeof ARCOS_STATUS[number];
 
 export interface FieldSummary { distinct: number; top: [string, number][]; min?: number; max?: number; /** every value with its count (when <= 100 distinct) */ all?: [string, number][]; /** features without this property */ missing: number }
 
@@ -39,6 +45,10 @@ export const store = {
   arcosFeatures: [] as { id: number; props: Props; coords: LngLat }[],
   /** ARCOS damage counts: category (damage type) -> asset type -> reports */
   arcos: new Map<string, Map<string, { n: number; open: number }>>(),
+  /** ARCOS reports per repair status */
+  arcosStatus: { open: 0, '48h': 0, '30d': 0, older: 0 } as Record<ArcosStatus, number>,
+  /** primary conductor segments (position + conductor details), to size repair materials to the line next to a damage report */
+  primarySegs: [] as { spec?: string; volt?: string; phn?: number; mount?: string; pts: LngLat[] }[],
   topology: null as Topology | null,
   /** device location -> transformers it de-energizes when opened (for ARCOS isolation points) */
   openDown: {} as Record<string, string[]>,
@@ -140,6 +150,7 @@ function index(key: LayerKey, fc: any) {
       const c = m.get(asset) ?? m.set(asset, { n: 0, open: 0 }).get(asset)!;
       c.n++;
       if (f.properties.repaired === 'No') c.open++;
+      store.arcosStatus[f.properties.repaired === 'No' ? 'open' : (f.properties.rw ?? 'older') as ArcosStatus]++;
     }
   } else if (key === 'poles') {
     for (const f of fc.features) store.poleLocs.add(f.properties.loc);
@@ -150,8 +161,10 @@ function index(key: LayerKey, fc: any) {
         (store.adj.get(a) ?? store.adj.set(a, []).get(a)!).push([b, i]);
         (store.adj.get(b) ?? store.adj.set(b, []).get(b)!).push([a, i]);
       }
+      const pts: LngLat[] = f.geometry.type === 'LineString' ? f.geometry.coordinates : f.geometry.coordinates.flat();
+      store.primarySegs.push({ spec: f.properties.spec, volt: f.properties.volt, phn: f.properties.phn, mount: f.properties.mount, pts });
       if (circuit) {
-        const c = f.geometry.type === 'LineString' ? f.geometry.coordinates : f.geometry.coordinates.flat();
+        const c = pts;
         let info = store.circuits.get(circuit);
         if (!info) store.circuits.set(circuit, info = { bbox: [Infinity, Infinity, -Infinity, -Infinity], segments: 0 });
         info.segments++;

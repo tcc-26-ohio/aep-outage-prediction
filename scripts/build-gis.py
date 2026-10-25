@@ -272,6 +272,7 @@ for rec, _, pts, _ in read("Data1", "arcos_prod_damage_09_28_Clip"):
         "damage": rec["Inform_Wor"],
         "repaired": rec["Repaired"],
         "reported": rec["Report_Tim"],
+        "repairedAt": rec["Repaired_D"],
         "region": rec["Region"],
         "station": rec["Substation"],
         "circuit": rec["Circuit"],
@@ -281,7 +282,7 @@ for rec, _, pts, _ in read("Data1", "arcos_prod_damage_09_28_Clip"):
     features.append({"type": "Feature", "geometry": point_geom(pts), "properties": p})
 n = write("arcos", features)
 register("arcos", "ARCOS damage reports", "Impact", "point", "Data1", "arcos_prod_damage_09_28_Clip", n, [
-    ["asset", "Asset type"], ["damage", "Damage"], ["repaired", "Repaired"], ["reported", "Reported"], ["region", "Region"], ["station", "Substation"], ["circuit", "Circuit"], ["event", "Event"]])
+    ["asset", "Asset type"], ["damage", "Damage"], ["repaired", "Repaired"], ["reported", "Reported"], ["repairedAt", "Repaired on"], ["region", "Region"], ["station", "Substation"], ["circuit", "Circuit"], ["event", "Event"]])
 
 
 def facility(key, label, shp, kind):

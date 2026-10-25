@@ -5,6 +5,7 @@ import { convertToModelMessages, streamText, stepCountIs, type UIMessage } from 
 import { outageTools } from './server/tools';
 import { clientChatStream, type ChatTurn } from './server/clientChat';
 import { getPremise, premiseStatus, searchPremises } from './server/premises';
+import { parseContact, subscribe } from './server/subscriptions';
 
 const app = new Hono();
 
@@ -65,6 +66,20 @@ app.get('/api/premises/:pid/status', async (c) => {
   }
 });
 
+app.post('/api/premises/:pid/updates', async (c) => {
+  try {
+    const pid = c.req.param('pid');
+    const contact = parseContact((await c.req.json().catch(() => ({})))?.contact);
+    if (!contact) return c.json({ error: 'Enter a valid email address or 10-digit mobile number.' }, 400);
+    if (!(await getPremise(pid))) return c.json({ error: 'Not found' }, 404);
+    subscribe(pid, contact);
+    return c.json({ ok: true, channel: contact.channel });
+  } catch (error) {
+    console.error('Update sign-up failed:', error);
+    return c.json({ error: 'Sign-up is unavailable right now.' }, 503);
+  }
+});
+
 app.post('/api/client-chat', async (c) => {
   try {
     const body = await c.req.json();
@@ -72,7 +87,7 @@ app.post('/api/client-chat', async (c) => {
       ? body.messages.slice(-20).filter((m: any) => (m?.role === 'user' || m?.role === 'assistant') && typeof m.content === 'string' && m.content.trim()).map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 2000) }))
       : [];
     if (!turns.length || turns[turns.length - 1]!.role !== 'user') return c.json({ error: 'Send a question.' }, 400);
-    const result = await clientChatStream({ pid: typeof body.pid === 'string' ? body.pid : undefined, includeRepaired: body.includeRepaired === true, messages: turns, signal: c.req.raw.signal });
+    const result = await clientChatStream({ pid: typeof body.pid === 'string' ? body.pid : undefined, includeRepaired: body.includeRepaired === true, subscribed: body.subscribed === true, messages: turns, signal: c.req.raw.signal });
     return result.toTextStreamResponse();
   } catch (error) {
     console.error('Client chat failed:', error);

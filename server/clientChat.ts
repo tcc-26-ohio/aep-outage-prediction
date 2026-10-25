@@ -13,7 +13,7 @@ const HOW_ESTIMATES_WORK = `How the estimates work (explain this in plain words 
 - The risk level looks at four things: how old the utility poles around the home are (very old records are ignored because their dates are unreliable), how many of those poles stand right beside an interstate or busy road where crashes can damage them, how many customers the outage affects (higher if the whole circuit is out or someone at the address uses life support), and how many other reported damage sites are within about 2 km. Road traffic is judged from the type of road, not actual traffic counts.
 - Confidence is lower when there is no pole age data nearby, when the damage location is approximate, or when it has to assume a wider area is affected. "No known outage" does not rule out an outage that hasn't been reported yet.`;
 
-async function premiseContext(pid: string | undefined, includeRepaired: boolean) {
+async function premiseContext(pid: string | undefined, includeRepaired: boolean, subscribed: boolean) {
   if (!pid) return 'No premise has been selected.';
   const premise = await getPremise(pid);
   const status = premise ? await premiseStatus(pid, includeRepaired) : null;
@@ -31,15 +31,16 @@ async function premiseContext(pid: string | undefined, includeRepaired: boolean)
     `Outage risk shown on the customer's map: ${status.risk.level === 'none' ? 'no known outage' : `${status.risk.level} risk`}, ${status.risk.confidence} confidence.`,
     `What it is based on: ${Object.values(status.risk.factors).map(f => f.label).join('; ')}.`,
     status.risk.notes.length ? `Caveats about the data: ${status.risk.notes.join(' ')}` : '',
+    status.damage.length ? (subscribed ? 'The customer has already signed up for outage updates.' : 'The customer has not signed up for outage updates.') : '',
     HOW_ESTIMATES_WORK,
   ];
   return lines.filter(Boolean).join('\n');
 }
 
-export async function clientChatStream(opts: { pid?: string; includeRepaired?: boolean; messages: ChatTurn[]; signal?: AbortSignal }) {
+export async function clientChatStream(opts: { pid?: string; includeRepaired?: boolean; subscribed?: boolean; messages: ChatTurn[]; signal?: AbortSignal }) {
   if (!process.env.GROQ_API_KEY) throw new Error('Add GROQ_API_KEY to .env to enable chat.');
   const groq = createGroq({ apiKey: process.env.GROQ_API_KEY });
-  const context = await premiseContext(opts.pid, !!opts.includeRepaired);
+  const context = await premiseContext(opts.pid, !!opts.includeRepaired, !!opts.subscribed);
   return streamText({
     model: groq(process.env.GROQ_MODEL || 'llama-3.3-70b-versatile'),
     providerOptions: { groq: { reasoningFormat: 'hidden' } },
@@ -53,6 +54,7 @@ ${context}
 Rules:
 - Only state facts about THIS customer's outage from the context above. Never invent causes, crew locations, or restoration times. If asked when power returns, give the estimate range above if there is one, call it an estimate, and say conditions can change it; if there is none, say you don't have one.
 - If asked what the repair estimate or risk level is based on, answer in 2-3 plain sentences using "How the estimates work" and this customer's own factors above. Do not mention formulas, scores, points, person-hours or multipliers.
+- The customer is watching their outage on this page. If there is an open outage and they have NOT signed up for updates, offer once, near the end of a reply about their outage status or restoration time, to send them updates as it progresses, and tell them to tap the bell button at the top of the page (or the "Get outage updates" button). Do not offer again if they decline, ignore it, or have already signed up. Never say you signed them up yourself.
 - You cannot dispatch crews, file or change outage reports, or access accounts or billing. For those, tell the customer to contact their electric utility directly.
 - For downed lines, fire, smoke, sparks, or anyone in danger: tell them to stay away and call 911 first. If this premise is registered for life support and the customer mentions medical equipment or urgency, urge them to call 911 and their utility right away.
 - Never tell the customer to work on wiring, breaker panels or the utility's equipment; for in-home electrical problems recommend a licensed electrician or their utility.

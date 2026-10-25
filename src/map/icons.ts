@@ -42,7 +42,7 @@ function badge(letter: string, fill: string) {
 
 export const ICON_COLORS = {
   transformer: '#c084fc', fuse: '#f8fafc', switchClosed: '#2dd4bf', switchOpen: '#fb7185', recloser: '#60a5fa',
-  arcos: '#ef4444', hospital: '#e11d48', fire: '#ea580c', ambulance: '#2563eb',
+  arcos: '#ef4444', repaired48: '#22c55e', repaired30: '#14b8a6', repairedOld: '#94a3b8', hospital: '#e11d48', fire: '#ea580c', ambulance: '#2563eb',
 };
 
 export function addIcons(map: Map) {
@@ -62,6 +62,29 @@ export function addIcons(map: Map) {
     c.lineWidth = 3; c.strokeStyle = '#fff'; c.stroke();
     c.fillStyle = '#fff'; c.font = 'bold 18px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
     c.fillText('!', S / 2, S / 2 + 5);
+  }));
+  // repaired recently: shape + color differ from the open-damage triangle and from each other (circle = last 48 h, diamond = last 30 days)
+  const tick = (c: CanvasRenderingContext2D) => {
+    c.beginPath(); c.moveTo(11, 18.5); c.lineTo(16, 23.5); c.lineTo(25, 12.5);
+    c.lineWidth = 3.4; c.lineCap = 'round'; c.strokeStyle = '#fff'; c.stroke();
+  };
+  add('arcos-48h', make(c => {
+    c.beginPath(); c.arc(S / 2, S / 2, 15, 0, Math.PI * 2);
+    c.fillStyle = ICON_COLORS.repaired48; c.fill();
+    c.lineWidth = 3; c.strokeStyle = '#fff'; c.stroke();
+    tick(c);
+  }));
+  add('arcos-30d', make(c => {
+    poly(c, 4, 17);
+    c.fillStyle = ICON_COLORS.repaired30; c.fill();
+    c.lineWidth = 3; c.strokeStyle = '#fff'; c.stroke();
+    tick(c);
+  }));
+  // repaired earlier: small, muted grey ring so it stays out of the way of open and recent repairs
+  add('arcos-old', make(c => {
+    c.beginPath(); c.arc(S / 2, S / 2, 9, 0, Math.PI * 2);
+    c.fillStyle = 'rgba(148,163,184,0.45)'; c.fill();
+    c.lineWidth = 2.5; c.strokeStyle = 'rgba(226,232,240,0.85)'; c.stroke();
   }));
   add('open-here', make(c => {
     // "open here": red no-entry disc with a break bar
