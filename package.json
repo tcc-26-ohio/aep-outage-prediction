@@ -11,6 +11,7 @@
     "start": "NODE_ENV=production bun index.ts",
     "typecheck": "tsc --noEmit",
     "data:pull": "bash scripts/download-data.sh",
+    "weather:pull": ".venv/bin/python scripts/download_weather.py",
     "gis:build": ".venv/bin/python scripts/build-gis.py && .venv/bin/python scripts/build-isolation.py"
   },
   "devDependencies": {
